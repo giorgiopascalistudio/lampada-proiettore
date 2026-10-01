@@ -269,7 +269,7 @@ YOU</textarea>
         <div class="f"><label for="bf">Diametro flangia (mm)</label><input id="bf" type="number" value="22" min="6" max="60" step="0.5"></div>
         <div class="f"><label for="bt">Corsa del tasto (mm)</label><input id="bt" type="number" value="0.6" min="0.2" max="4" step="0.1"></div>
         <div class="f"><label for="bp">Sporgenza dal frontale (mm)</label><input id="bp" type="number" value="1" min="0" max="6" step="0.1"></div>
-        <div class="f"><label for="bg">Gioco tasto (mm)</label><input id="bg" type="number" value="0.25" min="0.05" max="1" step="0.05"></div>
+        <div class="f"><label for="bg">Gioco tasto (mm)</label><input id="bg" type="number" value="0.4" min="0.1" max="1" step="0.05"></div>
         <p class="note full" id="btnNote">Il tasto è un pezzo a parte: lo stelo passa nel foro del frontale, la flangia resta chiusa nella camera tra coperchio e retro del LED (lo "spessore interno"), così premendo spinge il LED e lo accende.</p>
       </div>
     </details>
@@ -416,6 +416,40 @@ function stencilize(gray,w,h,mm,p,shape,cx,cy){
   const outer=lab[0], par=Array.from({length:nl},(_,i)=>i);
   const find=a=>{ while(par[a]!==a){ par[a]=par[par[a]]; a=par[a]; } return a; };
   let bridges=0, filled=0;
+  const front=[];
+  /* Dove finisce davvero ogni isola sulla lampada (q = ρ / r(φ)):
+     – q < 1 ovunque: è dentro il frontale → isola del coperchio (ponte dietro l'inserto);
+     – qLo < q < qHi ovunque: cade nella fascia delle fessure → isola della parete (ponte nel testo);
+     – altrimenti tocca la fascia piena vicino al muro, il bordo del frontale o la parte piena in alto:
+       è già collegata e non serve nessun ponte. */
+  const L=p.L, qLo=L/(L-p.hb);
+  let litMax=0;
+  for(let i=0;i<N;i++) if(ink(i)){ const [X,Y]=toWall(i%w,(i/w)|0), r=X*X+Y*Y; if(r>litMax) litMax=r; }
+  litMax=Math.sqrt(litMax)+Math.max(p.bold,0);
+  const rhoMax=Math.max(shape.rMax*L/(L-p.hb)*1.05, litMax+1);
+  const zTop=Math.min(L*(1-shape.rMin/rhoMax), L-3), qHi=L/(L-zTop);
+  const qmin=new Float32Array(nl).fill(1e9), qmax=new Float32Array(nl);
+  for(let i=0;i<N;i++){
+    const C=lab[i]; if(C<0||C===outer) continue;
+    const [X,Y]=toWall(i%w,(i/w)|0), q=Math.hypot(X,Y)/shape.r(Math.atan2(Y,X));
+    if(q<qmin[C]) qmin[C]=q; if(q>qmax[C]) qmax[C]=q;
+  }
+  const kind=new Uint8Array(nl);                    // 0 = già collegata, 1 = parete, 2 = frontale
+  for(let C=0;C<nl;C++){
+    if(C===outer) continue;
+    if(qmax[C]<0.995) kind[C]=2;
+    else if(qmin[C]>qLo+0.02&&qmax[C]<qHi-0.02) kind[C]=1;
+    else par[C]=outer;
+  }
+  // i ponti del frontale passano sotto il coperchio: devono evitare il tasto e la sua camera
+  const g=ledGeom(p), clearR=g.on&&(g.btn||g.cham<1.4)?g.Rs1+0.8:(g.rh>0?g.rh+1:0);
+  const fbw=Math.max(2.4,2*p.bw);
+  const segDist0=(ax,ay,bx,by)=>{ const dx=bx-ax, dy=by-ay, ll=dx*dx+dy*dy||1; let t=-(ax*dx+ay*dy)/ll; t=Math.max(0,Math.min(1,t)); return Math.hypot(ax+t*dx,ay+t*dy); };
+  const frontBridge=c=>{
+    const [X0,Y0]=toWall(c.x0-0.5,c.y0-0.5), [X1,Y1]=toWall(c.x1-0.5,c.y1-0.5);
+    const ux=X1-X0, uy=Y1-Y0, l=Math.hypot(ux,uy)||1, e=2.5;
+    front.push({x0:X0-ux/l*e,y0:Y0-uy/l*e,x1:X1+ux/l*e,y1:Y1+uy/l*e,hw:fbw/2});
+  };
   const DIR=[]; for(let k=0;k<32;k++){ const a=k/32*2*Math.PI; DIR.push([Math.cos(a),Math.sin(a)]); }
   const cut=(x0,y0,x1,y1)=>{
     const dx=x1-x0, dy=y1-y0, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L;
@@ -437,9 +471,10 @@ function stencilize(gray,w,h,mm,p,shape,cx,cy){
     for(let C=0;C<nl;C++){
       if(C===outer||find(C)===find(outer)) continue;
       const B=bnd[C]; if(!B.length) continue;
+      const isFront=kind[C]===2;
       // isole minuscole: si riempiono
       const bi=B[B.length>>1];
-      const wpx=widthPx(bi%w,(bi/w)|0);
+      const wpx=isFront?fbw/mm:widthPx(bi%w,(bi/w)|0);
       if(area[C]<wpx*wpx*1.5){ for(let i=0;i<N;i++) if(lab[i]===C) gray[i]=255; par[C]=find(outer); filled++; changed=true; continue; }
       const step=Math.max(1,Math.floor(B.length/220)), cand=[];
       let mx=0,my=0; for(const i of B){ mx+=i%w; my+=(i/w)|0; } mx/=B.length; my/=B.length;
@@ -456,25 +491,38 @@ function stencilize(gray,w,h,mm,p,shape,cx,cy){
           }
           if(L>=maxLen) continue;
           const T=lab[yi*w+xi]; if(T<0||find(T)===find(C)) continue;
+          const toOuter=find(T)===find(outer);
+          if(isFront){
+            // ponte dietro l'inserto: deve finire sul coperchio e stare lontano dal tasto
+            const [X0,Y0]=toWall(x0-0.5,y0-0.5), [X1,Y1]=toWall(x-0.5,y-0.5);
+            if(Math.hypot(X1,Y1)>shape.r(Math.atan2(Y1,X1))*0.93-p.t) continue;
+            if(clearR>0&&segDist0(X0,Y0,X1,Y1)<clearR+fbw/2) continue;
+            cand.push({L,cost:(L+3)*(toOuter?1:1.4),x0,y0,x1:x,y1:y,T,ang:Math.atan2(y0-my,x0-mx)});
+            continue;
+          }
+          // un ponte della parete non deve entrare nel frontale (taglierebbe un inserto)
+          let inFront=false;
+          for(let k=0;k<=4&&!inFront;k++){ const [X,Y]=toWall(x0+(x-x0)*k/4-0.5,y0+(y-y0)*k/4-0.5); if(Math.hypot(X,Y)<shape.r(Math.atan2(Y,X))*1.03+p.bw) inFront=true; }
+          if(inFront) continue;
           // costo = luce tolta dal ponte (lunghezza × larghezza nel testo)
-          const toOuter=find(T)===find(outer), wb=widthPx((x0+x)/2,(y0+y)/2,dx,dy);
+          const wb=widthPx((x0+x)/2,(y0+y)/2,dx,dy);
           cand.push({L,cost:(L+3)*wb*(toOuter?1:1.4),x0,y0,x1:x,y1:y,T,ang:Math.atan2(y0-my,x0-mx)});
         }
       }
       if(!cand.length) continue;
       cand.sort((a,b)=>a.cost-b.cost);
-      const a=cand[0];
-      cut(a.x0,a.y0,a.x1,a.y1); bridges++;
+      const a=cand[0], make=isFront?frontBridge:c=>cut(c.x0,c.y0,c.x1,c.y1);
+      make(a); bridges++;
       if(p.bn>1){                                  // secondo ponte dal lato opposto dell'isola
         let b=null;
         for(const c of cand){ let da=Math.abs(c.ang-a.ang); if(da>Math.PI) da=2*Math.PI-da; if(da>1.9&&c.L<a.L*3+8){ b=c; break; } }
-        if(b){ cut(b.x0,b.y0,b.x1,b.y1); bridges++; }
+        if(b){ make(b); bridges++; }
       }
       par[find(C)]=find(a.T); changed=true;
     }
     if(!changed) break;
   }
-  return {bridges,filled};
+  return {bridges,filled,front};
 }
 
 function maskFromGray(gray,w,h,mm,p,shape){
@@ -482,7 +530,7 @@ function maskFromGray(gray,w,h,mm,p,shape){
   let minX=w,maxX=0,minY=h,maxY=0;
   for(let i=0;i<w*h;i++){ if(gray[i]>127){ const x=i%w, y=(i/w)|0; if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } }
   if(maxX<minX) return null;
-  const st=p.bn>0?stencilize(gray,w,h,mm,p,shape,(minX+maxX+1)/2,(minY+maxY+1)/2):{bridges:0,filled:0};
+  const st=p.bn>0?stencilize(gray,w,h,mm,p,shape,(minX+maxX+1)/2,(minY+maxY+1)/2):{bridges:0,filled:0,front:[]};
   for(let i=0;i<w*h;i++){ if(gray[i]>127) inside[i]=1; else outside[i]=1; }
   const dIn=edt(inside,w,h), dOut=edt(outside,w,h), sd=new Float32Array(w*h);
   for(let i=0;i<w*h;i++){
@@ -499,7 +547,7 @@ function maskFromGray(gray,w,h,mm,p,shape){
     if(Math.abs(X)>ex) ex=Math.abs(X); if(Math.abs(Y)>ey) ey=Math.abs(Y);
   }
   const grow=Math.max(bold,0);
-  return {sd,w,h,cx,cy,mm,ca,sa,ox,oy,bold,bridges:st.bridges,filled:st.filled,litMax:Math.sqrt(best)+grow, extX:ex+grow, extY:ey+grow,
+  return {sd,w,h,cx,cy,mm,ca,sa,ox,oy,bold,bridges:st.bridges,filled:st.filled,front:st.front,litMax:Math.sqrt(best)+grow, extX:ex+grow, extY:ey+grow,
     sizeW:(maxX-minX+1)*mm+2*bold, sizeH:(maxY-minY+1)*mm+2*bold};
 }
 function sdf(m,x,y){
@@ -756,7 +804,15 @@ const ringSlots=(x,y,r0,r1,slot)=>{               // anello r0..r1 con 4 tagli l
    taglio a U (resta attaccata solo alla pelle superiore), che scende sotto il coperchio con un dente
    smussato che si aggancia sotto il bordo del foro. */
 const CLIP={w:5, side:0.7, ft:1.0, slot:0.8, hb:1.0, gap:0.1, skin:0.8};
+// ponti del frontale (sotto il coperchio, dietro gli inserti): >0 dentro la striscia
+function stripField(list){
+  if(!list||!list.length) return ()=>-1e9;
+  return (x,y)=>{ let v=-1e9; for(const b of list){
+    const dx=b.x1-b.x0, dy=b.y1-b.y0, ll=dx*dx+dy*dy||1; let t=((x-b.x0)*dx+(y-b.y0)*dy)/ll; t=Math.max(0,Math.min(1,t));
+    v=Math.max(v,b.hw-Math.hypot(x-b.x0-t*dx,y-b.y0-t*dy)); } return v; };
+}
 function planClips(p,m,shape,g,fShape,hole){
+  const strip=stripField(m.front);
   const q=Math.max(p.cell,0.5), B=shape.rMax+1, n=Math.ceil(2*B/q)+1, cl=p.cl;
   const X=i=>-B+i*q, idx=(i,j)=>j*n+i;
   const S=new Float32Array(n*n), piece=new Uint8Array(n*n), cover=new Uint8Array(n*n);
@@ -764,7 +820,7 @@ function planClips(p,m,shape,g,fShape,hole){
     const x=X(i), y=X(j), s=sdf(m,x,y), f=fShape(x,y), h=hole(x,y), k=idx(i,j);
     S[k]=s;
     if(s-cl>0.25&&f-cl>0.25&&h-cl>0.25) piece[k]=1;
-    if(s<0&&f>0&&h>0) cover[k]=1;
+    if((s<0||strip(x,y)>0)&&f>0&&h>0) cover[k]=1;
   }
   // pezzi di lettera (componenti connesse)
   const lab=new Int32Array(n*n).fill(-1), comps=[], st=[];
@@ -794,7 +850,7 @@ function planClips(p,m,shape,g,fShape,hole){
       edge++;
       if(!p.clips) continue;
       const x=X(k%n), y=X((k/n)|0), r=Math.hypot(x,y);
-      if(blocked(r)||fShape(x,y)<p.t+2.5) continue;
+      if(blocked(r)||fShape(x,y)<p.t+2.5||strip(x,y)>-(CLIP.w/2+1.5)) continue;
       let gx=sdf(m,x+h,y)-sdf(m,x-h,y), gy=sdf(m,x,y+h)-sdf(m,x,y-h); const gl=Math.hypot(gx,gy); if(gl<1e-6) continue; gx/=gl; gy/=gl;
       const thick=sdf(m,x+gx*(cl+reach+1.4),y+gy*(cl+reach+1.4));        // materiale oltre il taglio
       if(thick<cl+reach+0.6) continue;
@@ -826,6 +882,17 @@ function buildFront(p,m,shape,g,fShape,hole,body,ins){
   const plan=planClips(p,m,shape,g,fShape,hole);
   // frontale: coperchio + rilievo con le lettere passanti
   extrudePlanar((x,y)=>Math.min(fShape(x,y),-sdf(m,x,y),hole(x,y)),-B,-B,B,B,c,zc,zt,body);
+  // ponti dietro gli inserti: strisce sotto il coperchio che tengono le isole del frontale
+  // (0,05 mm sotto l'inserto, attaccate al coperchio solo dove c'è coperchio)
+  if(m.front&&m.front.length){
+    const fc=Math.min(c,0.3);
+    for(const b of m.front){
+      const R=b.hw+1, bx0=Math.min(b.x0,b.x1)-R, bx1=Math.max(b.x0,b.x1)+R, by0=Math.min(b.y0,b.y1)-R, by1=Math.max(b.y0,b.y1)+R;
+      const one=stripField([b]);
+      extrudePlanar((x,y)=>Math.min(one(x,y),fShape(x,y)-0.3,hole(x,y)),bx0,by0,bx1,by1,fc,zc-1.25,zc-0.05,body);
+      extrudePlanar((x,y)=>Math.min(one(x,y),fShape(x,y)-0.3,hole(x,y),-sdf(m,x,y)-0.05),bx0,by0,bx1,by1,fc,zc-0.06,zc+0.3,body);
+    }
+  }
   const base=(x,y,s)=>Math.min(fShape(x,y)-cl,s-cl,hole(x,y)-cl);
   const C=plan.clips, w2=CLIP.w/2, ft=CLIP.ft, sl=CLIP.slot, sd=CLIP.side;
   if(!C.length||zt-zc<CLIP.skin+0.8){ extrudePlanar((x,y)=>base(x,y,sdf(m,x,y)),-B,-B,B,B,c,zc,zt,ins); return plan; }
@@ -1050,7 +1117,7 @@ function fillWeights(){
 function fontNote(){
   const f=FONTS[+$('font').value], n=$('fontNote'), bn=+$('bn').value;
   if(f.g==='Stencil'){ n.textContent=''; n.className='note full'; return; }
-  if(bn>0){ n.textContent='Font non stencil: l\'interno delle lettere chiuse (O, A, B, D, R, gli occhielli dei corsivi) viene collegato con ponti automatici, che sul muro si vedono come sottili tagli nelle lettere.'; n.className='note full'; }
+  if(bn>0){ n.textContent='Font non stencil: l\'interno delle lettere chiuse (O, A, B, D, R, gli occhielli dei corsivi) viene collegato con ponti automatici solo dove serve: sulla parete come sottili tagli nelle lettere, sul frontale con un ponte nascosto dietro l\'inserto (la lettera resta intera).'; n.className='note full'; }
   else { n.textContent='Ponti disattivati: l\'interno delle lettere chiuse diventa un pezzo staccato sulla parete e sul frontale.'; n.className='note full warn'; }
 }
 /* font caricati: salvati nel browser (IndexedDB), così restano dopo la chiusura */
