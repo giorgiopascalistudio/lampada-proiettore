@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lampada proiettore – generatore STL</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Stardos+Stencil:wght@400;700&family=Allerta+Stencil&family=Saira+Stencil+One&family=Saira+Stencil:wght@100..900&family=Black+Ops+One&family=Sirin+Stencil&family=Big+Shoulders+Stencil:wght@100..900&family=Stick+No+Bills:wght@200..800&family=Emblema+One&family=Wallpoet&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shrikhand&family=Leckerli+One&family=Lobster&family=Lobster+Two:wght@400;700&family=Pacifico&family=Oleo+Script:wght@400;700&family=Chicle&family=Lily+Script+One&family=Grand+Hotel&family=Kaushan+Script&family=Yellowtail&family=Berkshire+Swash&family=Bagel+Fat+One&family=Titan+One&family=Sonsie+One&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Bebas+Neue&family=Bungee&family=Montserrat:wght@100..900&family=Permanent+Marker&display=swap">
+<style>
+:root{
+  --bg:#ECE8E3; --card:#FFFFFF; --field:#F4F2EF; --ink:#18191B; --muted:#8E8981; --line:#E6E1DA;
+  --tile:#1B1C1E; --tile-ink:#F4F1EC;
+  --orange:#EE7F2F; --amber:#F4B94A;
+  --ok:#2F8A4C; --ok-bg:#E2F2E6; --warn:#B4531C; --warn-bg:#FBE8DB;
+  --shadow:0 1px 2px rgba(60,40,20,.06),0 6px 20px rgba(60,40,20,.10);
+  --r-md:14px; --r-sm:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121314; --card:#1C1E20; --field:#26282B; --ink:#F2EFEA; --muted:#9A958D; --line:#2C2E31;
+    --tile:#F2EFEA; --tile-ink:#18191B;
+    --ok:#6FD08F; --ok-bg:#183322; --warn:#F59A62; --warn-bg:#3A2216;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121314; --card:#1C1E20; --field:#26282B; --ink:#F2EFEA; --muted:#9A958D; --line:#2C2E31;
+  --tile:#F2EFEA; --tile-ink:#18191B;
+  --ok:#6FD08F; --ok-bg:#183322; --warn:#F59A62; --warn-bg:#3A2216;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:400 13px/1.45 "Outfit",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+
+/* layout: vista 3D a sinistra, pannello a destra */
+.app{display:grid;grid-template-columns:minmax(0,1fr) 400px;height:100vh;height:100dvh}
+.viewer{position:relative;overflow:hidden;background:#2a2c30;transition:background .3s}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#gl:active{cursor:grabbing}
+.panel{overflow-y:auto;background:var(--card);border-left:1px solid var(--line);display:flex;flex-direction:column}
+@media(max-width:860px){
+  .app{grid-template-columns:1fr;height:auto}
+  .viewer{height:62vh;height:62svh;min-height:340px}
+  .panel{border-left:0;overflow:visible}
+}
+
+/* sovrapposizioni sulla vista */
+.ov{position:absolute;display:flex;gap:6px;align-items:center;z-index:2}
+.ov.tl{left:12px;top:12px;flex-wrap:wrap;right:12px}
+.ov.bl{left:12px;bottom:12px;flex-wrap:wrap;right:110px}
+.ov.br{right:12px;bottom:12px}
+.pill{background:var(--card);color:var(--ink);border-radius:999px;box-shadow:var(--shadow);display:flex;align-items:center;gap:2px;padding:3px}
+.pill button{font:inherit;font-size:12px;border:0;background:transparent;color:var(--ink);padding:6px 11px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.pill button:hover{background:var(--field)}
+.pill button.on{background:var(--ink);color:var(--card)}
+.pill .sep{width:1px;height:18px;background:var(--line);margin:0 2px}
+.busy{background:var(--card);border-radius:999px;box-shadow:var(--shadow);padding:7px 12px;font-size:12px;display:none;align-items:center;gap:8px;margin-left:auto}
+.busy.show{display:flex}
+.busy i{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--orange);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hint{font-size:11px;color:rgba(255,255,255,.6);pointer-events:none;text-align:right}
+.viewer.light .hint{color:rgba(0,0,0,.45)}
+@media(max-width:560px){.hint{display:none}.ov.bl{right:12px}}
+
+/* pannello */
+.phead{padding:16px 18px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+.mark{width:22px;height:22px;flex:none;border-radius:50%;background:radial-gradient(circle at 50% 50%,#fff 0 22%,transparent 24%),conic-gradient(from 0deg,var(--orange),var(--amber),var(--orange),var(--amber),var(--orange))}
+.phead h1{font-size:16px;font-weight:500;margin:0;line-height:1.1}
+.phead p{margin:2px 0 0;color:var(--muted);font-size:12px}
+.chip{margin-left:auto;font-size:11px;padding:3px 10px;border-radius:999px;white-space:nowrap;background:var(--field);color:var(--muted)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.warn{background:var(--warn-bg);color:var(--warn)}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--line)}
+.stats div{padding:10px 12px 10px 18px;border-right:1px solid var(--line)}
+.stats div:nth-child(3n){border-right:0}
+.stats div:nth-child(-n+3){border-bottom:1px solid var(--line)}
+.stats small{display:block;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stats b{font-weight:400;font-size:16px;white-space:nowrap}
+.warns{margin:0;padding:10px 18px 0;list-style:none;display:grid;gap:6px}
+.warns:empty{display:none}
+.warns li{background:var(--warn-bg);color:var(--warn);border-radius:var(--r-sm);padding:8px 11px;font-size:12px}
+
+details.grp{border-bottom:1px solid var(--line)}
+details.grp>summary{list-style:none;cursor:pointer;padding:13px 18px;font-weight:500;font-size:14px;display:flex;align-items:center;justify-content:space-between}
+details.grp>summary::-webkit-details-marker{display:none}
+details.grp>summary::after{content:"";width:7px;height:7px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);margin-top:-4px;transition:transform .2s}
+details.grp[open]>summary::after{transform:rotate(-135deg);margin-top:4px}
+.body{padding:0 18px 16px}
+.fields{display:grid;gap:12px 16px;grid-template-columns:1fr 1fr}
+.full{grid-column:1/-1}
+.f label{display:block;font-size:11.5px;color:var(--muted);margin:0 0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f .row{display:grid;grid-template-columns:minmax(0,1fr) 62px;gap:8px;align-items:center}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--field);border:1px solid transparent;border-radius:var(--r-sm);padding:7px 9px;width:100%;-webkit-appearance:none;appearance:none}
+input[type=number]{text-align:right;padding:6px 7px;-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button{opacity:.5}
+input[type=range]{padding:0;background:transparent;height:20px;accent-color:var(--orange);-webkit-appearance:auto;appearance:auto;cursor:pointer}
+select{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;background-size:5px 5px;background-repeat:no-repeat;padding-right:26px}
+textarea{font-size:20px;font-weight:300;line-height:1.2;resize:vertical;min-height:70px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange);background:var(--card)}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.swatches{display:flex;gap:6px;flex-wrap:wrap}
+.swatches button{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0}
+.swatches button.on{border-color:var(--orange);box-shadow:0 0 0 2px var(--card) inset}
+.seg{display:flex;background:var(--field);border-radius:var(--r-sm);padding:3px;gap:2px}
+.seg button{flex:1;font:inherit;font-size:12px;border:0;background:transparent;color:var(--muted);padding:5px 6px;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+.row2{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.mini-btn{font:inherit;font-size:12px;border:0;border-radius:var(--r-sm);background:var(--field);color:var(--ink);padding:0 12px;cursor:pointer}
+.mini-btn:hover{background:var(--line)}
+.note{margin:0;font-size:11.5px;color:var(--muted)}
+.note:empty{display:none}
+.note.warn{color:var(--warn)}
+.export{position:sticky;bottom:0;margin-top:auto;background:var(--card);border-top:1px solid var(--line);padding:12px 18px 14px;display:grid;gap:8px;grid-template-columns:1fr 1fr 1fr;z-index:3}
+.export .f{grid-column:1/-1}
+.btn{font:inherit;font-size:13px;border-radius:999px;border:0;padding:11px 14px;cursor:pointer;background:var(--ink);color:var(--card)}
+.btn.alt{background:var(--field);color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.status{grid-column:1/-1;margin:0;font-size:12px;color:var(--muted)}
+.status.ok{color:var(--ok)} .status.warn{color:var(--warn)}
+.info{padding:0 18px 16px;color:var(--muted);font-size:12.5px}
+.info ul{margin:0;padding-left:18px;display:grid;gap:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="viewer" id="viewer">
+    <canvas id="gl" aria-label="Anteprima 3D della lampada e della luce sul muro"></canvas>
+    <div class="ov tl">
+      <div class="pill" role="group" aria-label="Vista">
+        <button id="v34" class="on">3/4</button>
+        <button id="vFront">Fronte</button>
+        <button id="vSide">Lato</button>
+        <button id="vBack">Retro</button>
+        <span class="sep"></span>
+        <button id="vFit" title="Inquadra lampada e scritta">Adatta</button>
+        <button id="vCut" aria-pressed="false" title="Taglia a metà per vedere LED e tasto">Sezione</button>
+      </div>
+      <div class="busy" id="busy"><i></i><span id="busyTxt">Aggiorno…</span></div>
+    </div>
+    <div class="ov bl">
+      <div class="pill" role="group" aria-label="Luce">
+        <button id="lightOn" class="on" aria-pressed="true">💡 Luce accesa</button>
+        <span class="sep"></span>
+        <button data-amb="dark">Buio</button>
+        <button data-amb="dim" class="on">Soffusa</button>
+        <button data-amb="day">Giorno</button>
+      </div>
+      <div class="pill" role="group" aria-label="Parti visibili">
+        <button data-layer="body" class="on" aria-pressed="true">Corpo</button>
+        <button data-layer="ins" class="on" aria-pressed="true">Lettere</button>
+        <button data-layer="btn" class="on" aria-pressed="true">Tasto</button>
+        <button data-layer="wall" class="on" aria-pressed="true">Muro</button>
+        <span class="sep"></span>
+        <button id="explode" aria-pressed="false" title="Solleva lettere e tasto per vedere i ganci">Esploso</button>
+      </div>
+    </div>
+    <div class="ov br"><span class="hint">Trascina per ruotare<br>rotellina / pizzica per lo zoom</span></div>
+  </main>
+
+  <aside class="panel">
+    <div class="phead">
+      <i class="mark" aria-hidden="true"></i>
+      <div><h1>Lampada proiettore</h1><p>Generatore STL</p></div>
+      <span class="chip" id="chip">…</span>
+    </div>
+
+    <div class="stats">
+      <div><small>Testo sul muro</small><b id="stText">–</b></div>
+      <div><small>Camera tasto</small><b id="stLed">–</b></div>
+      <div><small>Dettaglio ai bordi</small><b id="stDet">–</b></div>
+      <div><small>Fessure fino a</small><b id="stZ">–</b></div>
+      <div><small>Parti parete</small><b id="stParts">–</b></div>
+      <div><small>Triangoli</small><b id="stTris">–</b></div>
+    </div>
+    <ul class="warns" id="warnList"></ul>
+
+    <details class="grp" open>
+      <summary>Testo</summary>
+      <div class="body fields">
+        <div class="f full">
+          <label for="text">Parole (una riga per ogni a capo, maiuscole come digitate)</label>
+          <textarea id="text" spellcheck="false" autocapitalize="none" autocorrect="off" autocomplete="off">FUCK
+YOU</textarea>
+        </div>
+        <div class="f full">
+          <label for="font">Font</label>
+          <div class="row2"><select id="font"></select><button type="button" class="mini-btn" id="fontUp" title="Carica un font .ttf / .otf / .woff">Carica…</button></div>
+          <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2" hidden>
+        </div>
+        <div class="f"><label for="fw">Peso</label><select id="fw"></select></div>
+        <div class="f"><label>Allineamento righe</label>
+          <div class="seg" id="align"><button data-v="left">Sx</button><button data-v="center" class="on">Centro</button><button data-v="right">Dx</button></div></div>
+        <div class="f"><label for="W">Larghezza sul muro (mm)</label><input id="W" type="number" value="320" min="100" max="1500" step="10"></div>
+        <div class="f"><label for="ls">Spaziatura lettere (%)</label><input id="ls" type="number" value="0" min="-20" max="60" step="1"></div>
+        <div class="f"><label for="lh">Interlinea (%)</label><input id="lh" type="number" value="100" min="60" max="180" step="1"></div>
+        <div class="f"><label for="bold">Ingrossa / assottiglia (mm)</label><input id="bold" type="number" value="0" min="-2" max="3" step="0.1"></div>
+        <div class="f"><label for="tx">Sposta orizzontale (mm)</label><input id="tx" type="number" value="0" min="-150" max="150" step="1"></div>
+        <div class="f"><label for="ty">Sposta verticale (mm)</label><input id="ty" type="number" value="0" min="-150" max="150" step="1"></div>
+        <div class="f"><label for="trot">Rotazione testo (°)</label><input id="trot" type="number" value="0" min="-180" max="180" step="1"></div>
+        <div class="f"><label for="bn">Ponti per le isole</label>
+          <select id="bn"><option value="0">Nessuno</option><option value="1">1 per isola</option><option value="2" selected>2 per isola</option></select></div>
+        <div class="f"><label for="bw">Larghezza ponte sulla lampada (mm)</label><input id="bw" type="number" value="1.2" min="0.6" max="4" step="0.1"></div>
+        <p class="note full" id="fontNote"></p>
+        <p class="note full" id="bridgeNote"></p>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>Corpo</summary>
+      <div class="body fields">
+        <div class="f">
+          <label for="shape">Forma</label>
+          <select id="shape">
+            <option value="0" selected>Cerchio</option>
+            <option value="3">Triangolo</option>
+            <option value="4">Quadrato</option>
+            <option value="5">Pentagono</option>
+            <option value="6">Esagono</option>
+            <option value="8">Ottagono</option>
+          </select>
+        </div>
+        <div class="f"><label for="S">Diametro / larghezza (mm)</label><input id="S" type="number" value="100" min="40" max="240" step="1"></div>
+        <div class="f"><label for="H">Profondità dal muro (mm)</label><input id="H" type="number" value="66" min="25" max="200" step="0.5"></div>
+        <div class="f"><label for="rc">Raccordo spigoli (mm)</label><input id="rc" type="number" value="6" min="0" max="60" step="0.5"></div>
+        <div class="f"><label for="rot">Rotazione forma (°)</label><input id="rot" type="number" value="0" min="-180" max="180" step="1"></div>
+        <div class="f"><label for="t">Spessore parete (mm)</label><input id="t" type="number" value="2" min="0.8" max="6" step="0.2"></div>
+        <div class="f"><label for="hb">Fascia piena lato muro (mm)</label><input id="hb" type="number" value="6" min="2" max="20" step="0.5"></div>
+        <div class="f"><label for="tc">Spessore coperchio (mm)</label><input id="tc" type="number" value="1.6" min="0.6" max="5" step="0.2"></div>
+        <div class="f"><label for="tr">Rilievo frontale (mm)</label><input id="tr" type="number" value="1.6" min="0.4" max="5" step="0.2"></div>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>LED (KAPPLAKE)</summary>
+      <div class="body fields">
+        <div class="f"><label for="L">Lente LED dal muro (mm)</label><input id="L" type="number" value="55" min="10" max="190" step="0.5"></div>
+        <div class="f"><label for="led">Dimensione emettitore (mm)</label><input id="led" type="number" value="3" min="0" max="30" step="0.5"></div>
+        <div class="f"><label for="D">Diametro LED (mm, 0 = no supporto)</label><input id="D" type="number" value="35" min="0" max="80" step="0.1"></div>
+        <div class="f"><label for="Tl">Spessore LED (mm)</label><input id="Tl" type="number" value="7" min="2" max="30" step="0.1"></div>
+        <div class="f"><label for="gld">Gioco sede LED (mm)</label><input id="gld" type="number" value="0.2" min="0" max="1" step="0.05"></div>
+        <div class="f"><label for="lip">Dente di ritegno (mm)</label><input id="lip" type="number" value="0.9" min="0.3" max="3" step="0.1"></div>
+        <p class="note full">Il LED entra dal lato muro, con la lente verso il muro: le linguette si allargano e il dente lo trattiene. Lo spessore va misurato senza il gel adesivo.</p>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>Tasto</summary>
+      <div class="body fields">
+        <div class="f"><label for="btn">Tasto sul frontale</label>
+          <select id="btn"><option value="1" selected>Sì, con camera interna</option><option value="0">No</option></select></div>
+        <div class="f"><label for="bh">Diametro foro (mm)</label><input id="bh" type="number" value="8" min="3" max="30" step="0.5"></div>
+        <div class="f"><label for="bf">Diametro flangia (mm)</label><input id="bf" type="number" value="22" min="6" max="60" step="0.5"></div>
+        <div class="f"><label for="bt">Corsa del tasto (mm)</label><input id="bt" type="number" value="0.6" min="0.2" max="4" step="0.1"></div>
+        <div class="f"><label for="bp">Sporgenza dal frontale (mm)</label><input id="bp" type="number" value="1" min="0" max="6" step="0.1"></div>
+        <div class="f"><label for="bg">Gioco tasto (mm)</label><input id="bg" type="number" value="0.25" min="0.05" max="1" step="0.05"></div>
+        <p class="note full" id="btnNote">Il tasto è un pezzo a parte: lo stelo passa nel foro del frontale, la flangia resta chiusa nella camera tra coperchio e retro del LED (lo "spessore interno"), così premendo spinge il LED e lo accende.</p>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>Lettere sul frontale</summary>
+      <div class="body fields">
+        <div class="f"><label for="clips">Fissaggio pezzi</label>
+          <select id="clips"><option value="1" selected>Ganci a scatto</option><option value="0">Nessuno (colla / multicolore)</option></select></div>
+        <div class="f"><label for="cl">Gioco inserti (mm)</label><input id="cl" type="number" value="0.15" min="0" max="0.5" step="0.05"></div>
+        <div class="f"><label for="hk">Dente del gancio (mm)</label><input id="hk" type="number" value="0.4" min="0.15" max="1" step="0.05"></div>
+        <p class="note full" id="clipNote"></p>
+        <p class="note full">Le lettere attraversano tutto il frontale, così la luce interna le illumina: stampa i pezzi in materiale traslucido (PLA/PETG bianco o naturale). Ogni pezzo si inserisce dal davanti e si blocca con i ganci sotto il coperchio.</p>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>Fissaggio e mesh</summary>
+      <div class="body fields">
+        <div class="f"><label for="cw">Tacca cavo (mm, 0 = no)</label><input id="cw" type="number" value="0" min="0" max="20" step="0.5"></div>
+        <div class="f"><label for="key">Aggancio a muro</label>
+          <select id="key"><option value="1" selected>Asola a serratura</option><option value="0">Nessuno</option></select></div>
+        <div class="f full"><label for="res">Precisione mesh</label>
+          <select id="res"><option value="0.6">Bozza · 0,6 mm</option><option value="0.4" selected>Normale · 0,4 mm</option><option value="0.3">Fine · 0,3 mm</option><option value="0.22">Molto fine · 0,22 mm</option></select></div>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>Colori</summary>
+      <div class="body fields">
+        <div class="f full"><label>Colore LED</label>
+          <div class="seg" id="col"><button data-v="warm" class="on">Caldo</button><button data-v="neutral">Neutro</button><button data-v="cold">Freddo</button></div></div>
+        <div class="f"><label>Corpo</label>
+          <div class="swatches" id="cb"><button data-v="#26292e" class="on" style="background:#26292e" title="Nero"></button><button data-v="#8a8f96" style="background:#8a8f96" title="Grigio"></button><button data-v="#eceae6" style="background:#eceae6" title="Bianco"></button></div></div>
+        <div class="f"><label>Inserti e tasto</label>
+          <div class="swatches" id="ci"><button data-v="#f2c14e" class="on" style="background:#f2c14e" title="Giallo"></button><button data-v="#f4f2ee" style="background:#f4f2ee" title="Bianco"></button><button data-v="#d9442f" style="background:#d9442f" title="Rosso"></button><button data-v="#3a8f5c" style="background:#3a8f5c" title="Verde"></button></div></div>
+      </div>
+    </details>
+
+    <details class="grp">
+      <summary>Come è fatta e come si stampa</summary>
+      <div class="info"><ul>
+        <li>Il corpo è aperto verso il muro. Il LED sta sotto il coperchio, sull'asse, rivolto verso il muro: la luce esce dalle fessure vicino al muro e disegna le lettere intorno alla lampada.</li>
+        <li>Le fessure seguono il contorno reale delle lettere e sono inclinate lungo i raggi del LED, così non tolgono luce. Con forme diverse dal cerchio le lettere sul muro restano corrette.</li>
+        <li>La parte di scritta che cade dietro la lampada diventa una serie di inserti nella cornice frontale.</li>
+        <li>Il KAPPLAKE (Ø 35 mm) entra dal lato muro con la lente verso il muro: il collare a 4 linguette si allarga e il dente lo trattiene. Il taglio in basso lascia passare il cavo USB.</li>
+        <li>Il tasto si stampa a parte e si inserisce dall'interno prima del LED: la flangia resta chiusa tra coperchio e retro del LED, lo stelo esce dal foro del frontale. Premendolo spingi il LED contro il dente e lo accendi/spegni. Usa "Sezione" per controllarlo.</li>
+        <li>La luce sul muro nella vista 3D è calcolata tracciando i raggi dall'emettitore attraverso la parete generata.</li>
+        <li>In Bambu Studio o Orca carica i due file insieme come un unico oggetto con più parti. Con gioco 0 stampi in multicolore; con 0,1–0,2 mm stampi a parte e incastri.</li>
+        <li>Stampa con il frontale sul piatto: servono supporti solo sotto l'aletta dell'asola.</li>
+        <li>L'asola si aggancia a una vite con testa fino a 9 mm e gambo fino a 4,5 mm, lasciata sporgere 5–6 mm dal muro.</li>
+        <li>Il corpo è fatto di più volumi chiusi che si compenetrano; gli slicer li uniscono da soli.</li>
+        <li>Usa un font stencil anche per le minuscole: o, a, e, b avrebbero altrimenti isole interne scollegate.</li>
+      </ul></div>
+    </details>
+
+    <div class="export">
+      <div class="f"><label for="orient">Orientamento per la stampa</label>
+        <select id="orient">
+          <option value="front" selected>Frontale sul piatto (consigliato)</option>
+          <option value="wall">Lato muro sul piatto</option>
+        </select></div>
+      <button id="dlBody" class="btn" disabled>Corpo</button>
+      <button id="dlIns" class="btn alt" disabled>Inserti</button>
+      <button id="dlBtn" class="btn alt" disabled>Tasto</button>
+      <p id="status" class="status">Preparo l'anteprima…</p>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =====================================================================
+   CORE: geometria, mesh e simulazione della luce.
+   Gira in un Web Worker (così la pagina resta reattiva); se il worker non
+   è disponibile viene eseguito sul thread principale.
+   ===================================================================== */
+function CORE(){
+const PI=Math.PI, TWO=2*Math.PI;
+
+/* ---------- campo di distanza del testo ---------- */
+function edt1d(f,n,d,v,z){
+  let k=0; v[0]=0; z[0]=-1e20; z[1]=1e20;
+  for(let q=1;q<n;q++){
+    let s=((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]);
+    while(s<=z[k]){ k--; s=((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]); }
+    k++; v[k]=q; z[k]=s; z[k+1]=1e20;
+  }
+  k=0;
+  for(let q=0;q<n;q++){ while(z[k+1]<q) k++; const dq=q-v[k]; d[q]=dq*dq+f[v[k]]; }
+}
+function edt(seed,w,h){
+  const INF=1e12, D=new Float64Array(w*h), n=Math.max(w,h);
+  const f=new Float64Array(n), d=new Float64Array(n), v=new Int32Array(n), z=new Float64Array(n+1);
+  for(let i=0;i<w*h;i++) D[i]=seed[i]?0:INF;
+  for(let x=0;x<w;x++){ for(let y=0;y<h;y++) f[y]=D[y*w+x]; edt1d(f,h,d,v,z); for(let y=0;y<h;y++) D[y*w+x]=d[y]; }
+  for(let y=0;y<h;y++){ for(let x=0;x<w;x++) f[x]=D[y*w+x]; edt1d(f,w,d,v,z); for(let x=0;x<w;x++) D[y*w+x]=d[x]; }
+  return D;
+}
+/* Il testo (u,v) relativo al centro del suo riquadro va sul muro in R(rot)·(u,v) + (ox,oy). */
+/* ---------- ponti automatici (stencil) ----------
+   L'interno di lettere come O, A, B, D, R (o un corsivo chiuso) diventa un'isola: sulla parete e sul
+   frontale sarebbe un pezzo staccato. Per ogni isola si taglia un ponte nel tratto della lettera, nel
+   punto più corto, verso lo sfondo già collegato. La larghezza è data sulla lampada: sul muro il ponte
+   è più largo di ρ/R, così sulla parete stampata resta largo quanto chiesto. */
+function stencilize(gray,w,h,mm,p,shape,cx,cy){
+  const N=w*h, ink=i=>gray[i]>127;
+  const ca=Math.cos(p.trot), sa=Math.sin(p.trot);
+  const toWall=(x,y)=>{ const u=(x+.5-cx)*mm, v=-(y+.5-cy)*mm; return [u*ca-v*sa+p.tx, u*sa+v*ca+p.ty]; };
+  /* Larghezza del ponte nel testo (px) perché sulla lampada sia p.bw.
+     Muro → parete: in direzione tangenziale si scala di R/ρ, in direzione radiale di L·R/ρ²
+     (è la derivata di z = L(1−R/ρ)). Conta la direzione della larghezza, perpendicolare al ponte. */
+  const widthPx=(x,y,ux,uy)=>{
+    const [X,Y]=toWall(x,y), rho=Math.hypot(X,Y), R=shape.r(Math.atan2(Y,X));
+    let k=1;
+    if(rho>R){
+      const kt=R/rho, kr=p.L*R/(rho*rho);
+      if(ux===undefined) k=Math.min(kt,kr);
+      else{
+        const wx=ux*ca+uy*sa, wy=ux*sa-uy*ca;            // direzione del ponte sul muro
+        const nr=Math.abs((-wy*X+wx*Y)/rho);             // componente radiale della larghezza
+        k=Math.min(1,Math.hypot(kt*Math.sqrt(Math.max(0,1-nr*nr)),kr*nr));
+      }
+    }
+    return (p.bw/k+2*Math.max(p.bold,0))/mm;
+  };
+  // componenti dello sfondo (4-connesse)
+  const lab=new Int32Array(N).fill(-1), st=new Int32Array(N); let nl=0;
+  const area=[], bnd=[];
+  for(let i0=0;i0<N;i0++){
+    if(ink(i0)||lab[i0]>=0) continue;
+    const id=nl++; let sp=0, a=0; const b=[]; lab[i0]=id; st[sp++]=i0;
+    while(sp){
+      const i=st[--sp], x=i%w, y=(i/w)|0; a++;
+      let edge=false;
+      for(const j of [x>0?i-1:-1,x<w-1?i+1:-1,y>0?i-w:-1,y<h-1?i+w:-1]){
+        if(j<0) continue;
+        if(ink(j)) edge=true; else if(lab[j]<0){ lab[j]=id; st[sp++]=j; }
+      }
+      if(edge) b.push(i);
+    }
+    area.push(a); bnd.push(b);
+  }
+  const outer=lab[0], par=Array.from({length:nl},(_,i)=>i);
+  const find=a=>{ while(par[a]!==a){ par[a]=par[par[a]]; a=par[a]; } return a; };
+  let bridges=0, filled=0;
+  const DIR=[]; for(let k=0;k<32;k++){ const a=k/32*2*Math.PI; DIR.push([Math.cos(a),Math.sin(a)]); }
+  const cut=(x0,y0,x1,y1)=>{
+    const dx=x1-x0, dy=y1-y0, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L;
+    x0-=ux*1.5; y0-=uy*1.5; x1+=ux*1.5; y1+=uy*1.5;
+    const hw=widthPx((x0+x1)/2,(y0+y1)/2,ux,uy)/2;
+    const bx0=Math.max(0,Math.floor(Math.min(x0,x1)-hw-2)), bx1=Math.min(w-1,Math.ceil(Math.max(x0,x1)+hw+2));
+    const by0=Math.max(0,Math.floor(Math.min(y0,y1)-hw-2)), by1=Math.min(h-1,Math.ceil(Math.max(y0,y1)+hw+2));
+    const LL=(x1-x0)**2+(y1-y0)**2;
+    for(let y=by0;y<=by1;y++) for(let x=bx0;x<=bx1;x++){
+      let t=((x+.5-x0)*(x1-x0)+(y+.5-y0)*(y1-y0))/LL; t=Math.max(0,Math.min(1,t));
+      const d=Math.hypot(x+.5-x0-t*(x1-x0), y+.5-y0-t*(y1-y0));
+      const g=Math.round(Math.max(0,Math.min(1,d-hw+0.5))*255), i=y*w+x;
+      if(g<gray[i]) gray[i]=g;
+    }
+  };
+  const maxLen=60/mm;
+  for(let pass=0;pass<8;pass++){
+    let changed=false;
+    for(let C=0;C<nl;C++){
+      if(C===outer||find(C)===find(outer)) continue;
+      const B=bnd[C]; if(!B.length) continue;
+      // isole minuscole: si riempiono
+      const bi=B[B.length>>1];
+      const wpx=widthPx(bi%w,(bi/w)|0);
+      if(area[C]<wpx*wpx*1.5){ for(let i=0;i<N;i++) if(lab[i]===C) gray[i]=255; par[C]=find(outer); filled++; changed=true; continue; }
+      const step=Math.max(1,Math.floor(B.length/220)), cand=[];
+      let mx=0,my=0; for(const i of B){ mx+=i%w; my+=(i/w)|0; } mx/=B.length; my/=B.length;
+      for(let s=0;s<B.length;s+=step){
+        const i0=B[s], x0=i0%w+.5, y0=((i0/w)|0)+.5;
+        for(const [dx,dy] of DIR){
+          let x=x0+dx, y=y0+dy, xi=Math.floor(x), yi=Math.floor(y);
+          if(xi<0||yi<0||xi>=w||yi>=h||!ink(yi*w+xi)) continue;
+          let L=1;
+          while(L<maxLen){
+            x+=dx; y+=dy; L++; xi=Math.floor(x); yi=Math.floor(y);
+            if(xi<0||yi<0||xi>=w||yi>=h){ L=1e9; break; }
+            const j=yi*w+xi; if(!ink(j)) break;
+          }
+          if(L>=maxLen) continue;
+          const T=lab[yi*w+xi]; if(T<0||find(T)===find(C)) continue;
+          // costo = luce tolta dal ponte (lunghezza × larghezza nel testo)
+          const toOuter=find(T)===find(outer), wb=widthPx((x0+x)/2,(y0+y)/2,dx,dy);
+          cand.push({L,cost:(L+3)*wb*(toOuter?1:1.4),x0,y0,x1:x,y1:y,T,ang:Math.atan2(y0-my,x0-mx)});
+        }
+      }
+      if(!cand.length) continue;
+      cand.sort((a,b)=>a.cost-b.cost);
+      const a=cand[0];
+      cut(a.x0,a.y0,a.x1,a.y1); bridges++;
+      if(p.bn>1){                                  // secondo ponte dal lato opposto dell'isola
+        let b=null;
+        for(const c of cand){ let da=Math.abs(c.ang-a.ang); if(da>Math.PI) da=2*Math.PI-da; if(da>1.9&&c.L<a.L*3+8){ b=c; break; } }
+        if(b){ cut(b.x0,b.y0,b.x1,b.y1); bridges++; }
+      }
+      par[find(C)]=find(a.T); changed=true;
+    }
+    if(!changed) break;
+  }
+  return {bridges,filled};
+}
+
+function maskFromGray(gray,w,h,mm,p,shape){
+  const inside=new Uint8Array(w*h), outside=new Uint8Array(w*h);
+  let minX=w,maxX=0,minY=h,maxY=0;
+  for(let i=0;i<w*h;i++){ if(gray[i]>127){ const x=i%w, y=(i/w)|0; if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } }
+  if(maxX<minX) return null;
+  const st=p.bn>0?stencilize(gray,w,h,mm,p,shape,(minX+maxX+1)/2,(minY+maxY+1)/2):{bridges:0,filled:0};
+  for(let i=0;i<w*h;i++){ if(gray[i]>127) inside[i]=1; else outside[i]=1; }
+  const dIn=edt(inside,w,h), dOut=edt(outside,w,h), sd=new Float32Array(w*h);
+  for(let i=0;i<w*h;i++){
+    let s=inside[i]?Math.sqrt(dOut[i])-0.5:-(Math.sqrt(dIn[i])-0.5);
+    if(Math.abs(s)<0.51) s=gray[i]/255-0.5;
+    sd[i]=s*mm;
+  }
+  const cx=(minX+maxX+1)/2, cy=(minY+maxY+1)/2;
+  const ca=Math.cos(p.trot), sa=Math.sin(p.trot), ox=p.tx, oy=p.ty, bold=p.bold;
+  let best=0, ex=0, ey=0;
+  for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) if(inside[y*w+x]){
+    const u=(x+.5-cx)*mm, v=-(y+.5-cy)*mm, X=u*ca-v*sa+ox, Y=u*sa+v*ca+oy;
+    const r=X*X+Y*Y; if(r>best) best=r;
+    if(Math.abs(X)>ex) ex=Math.abs(X); if(Math.abs(Y)>ey) ey=Math.abs(Y);
+  }
+  const grow=Math.max(bold,0);
+  return {sd,w,h,cx,cy,mm,ca,sa,ox,oy,bold,bridges:st.bridges,filled:st.filled,litMax:Math.sqrt(best)+grow, extX:ex+grow, extY:ey+grow,
+    sizeW:(maxX-minX+1)*mm+2*bold, sizeH:(maxY-minY+1)*mm+2*bold};
+}
+function sdf(m,x,y){
+  const dx=x-m.ox, dy=y-m.oy, u=dx*m.ca+dy*m.sa, v=-dx*m.sa+dy*m.ca;
+  const fx=m.cx+u/m.mm-0.5, fy=m.cy-v/m.mm-0.5;
+  const x0=Math.floor(fx), y0=Math.floor(fy);
+  if(x0<0||y0<0||x0>=m.w-1||y0>=m.h-1) return -5;
+  const ax=fx-x0, ay=fy-y0, s=m.sd, w=m.w, i=y0*w+x0;
+  return (s[i]*(1-ax)+s[i+1]*ax)*(1-ay)+(s[i+w]*(1-ax)+s[i+w+1]*ax)*ay+m.bold;
+}
+
+/* ---------- forma del corpo ---------- */
+function makeShape(p){
+  const NT=4096, a=p.S/2, n=p.n;
+  const outer=new Float64Array(NT+1), inner=new Float64Array(NT+1);
+  if(n===0){ outer.fill(a); inner.fill(a-p.t); }
+  else{
+    const rc=Math.min(p.rc,a*0.98), ap=a-rc;
+    const inAp=rc>=p.t?ap:ap-(p.t-rc), inRc=Math.max(rc-p.t,0);
+    const radial=(apo,rr,phi)=>{
+      const cv=apo/Math.cos(PI/n), V=[];
+      for(let k=0;k<n;k++){ const q=p.rot+PI/2+(k+0.5)*TWO/n; V.push([cv*Math.cos(q),cv*Math.sin(q)]); }
+      const ux=Math.cos(phi), uy=Math.sin(phi);
+      const dist=(x,y)=>{
+        let inside=true, best=Infinity;
+        for(let k=0;k<n;k++){
+          const A=V[k], B=V[(k+1)%n], ex=B[0]-A[0], ey=B[1]-A[1];
+          if(ex*(y-A[1])-ey*(x-A[0])<0) inside=false;
+          let t=((x-A[0])*ex+(y-A[1])*ey)/(ex*ex+ey*ey); t=Math.max(0,Math.min(1,t));
+          const dx=x-A[0]-t*ex, dy=y-A[1]-t*ey, d=dx*dx+dy*dy; if(d<best) best=d;
+        }
+        return inside?0:Math.sqrt(best);
+      };
+      let lo=0, hi=cv+rr+1;
+      for(let it=0;it<44;it++){ const mid=(lo+hi)/2; if(dist(mid*ux,mid*uy)<=rr) lo=mid; else hi=mid; }
+      return lo;
+    };
+    for(let k=0;k<NT;k++){ const phi=k*TWO/NT; outer[k]=radial(ap,rc,phi); inner[k]=radial(inAp,inRc,phi); }
+    outer[NT]=outer[0]; inner[NT]=inner[0];
+  }
+  const look=(T,phi)=>{ let f=phi/TWO; f-=Math.floor(f); const x=f*NT, i=Math.floor(x), s=x-i; return T[i]+(T[i+1]-T[i])*s; };
+  let rMin=Infinity, rMax=0, riMin=Infinity;
+  for(let k=0;k<NT;k++){ rMin=Math.min(rMin,outer[k]); rMax=Math.max(rMax,outer[k]); riMin=Math.min(riMin,inner[k]); }
+  return { r:phi=>look(outer,phi), ri:phi=>look(inner,phi), rMin, rMax, riMin };
+}
+
+/* ---------- mesh ---------- */
+function tri(out,A,B,C){
+  const ux=B[0]-A[0],uy=B[1]-A[1],uz=B[2]-A[2],vx=C[0]-A[0],vy=C[1]-A[1],vz=C[2]-A[2];
+  const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+  if(nx*nx+ny*ny+nz*nz<1e-14) return;
+  out.push(A[0],A[1],A[2],B[0],B[1],B[2],C[0],C[1],C[2]);
+}
+function extrude(F,nx,ny,map,out){
+  const W=nx+1, CI=[[0,0],[1,0],[1,1],[0,1]];
+  const pt=(fi,fj)=>[fi,fj,map(fi,fj,true),map(fi,fj,false)];
+  function mid(i1,j1,i2,j2){
+    if(j2<j1||(j2===j1&&i2<i1)){ let t=i1;i1=i2;i2=t; t=j1;j1=j2;j2=t; }
+    const a=F[j1*W+i1], b=F[j2*W+i2], s=a/(a-b);
+    return pt(i1+(i2-i1)*s, j1+(j2-j1)*s);
+  }
+  const cache=new Map();
+  const corner=(i,j)=>{ const k=j*W+i; let v=cache.get(k); if(!v){ v=pt(i,j); cache.set(k,v); } return v; };
+  for(let j=0;j<ny;j++){
+    cache.clear();
+    for(let i=0;i<nx;i++){
+      const v=[F[j*W+i],F[j*W+i+1],F[(j+1)*W+i+1],F[(j+1)*W+i]];
+      if(v[0]<=0&&v[1]<=0&&v[2]<=0&&v[3]<=0) continue;
+      const poly=[], isMid=[];
+      for(let k=0;k<4;k++){
+        const a=CI[k], b=CI[(k+1)%4], va=v[k], vb=v[(k+1)%4];
+        if(va>0){ poly.push(corner(i+a[0],j+a[1])); isMid.push(false); }
+        if((va>0)!==(vb>0)){ poly.push(mid(i+a[0],j+a[1],i+b[0],j+b[1])); isMid.push(true); }
+      }
+      const n=poly.length;
+      for(let k=1;k<n-1;k++){
+        tri(out,poly[0][2],poly[k][2],poly[k+1][2]);
+        tri(out,poly[0][3],poly[k+1][3],poly[k][3]);
+      }
+      for(let k=0;k<n;k++){
+        const k2=(k+1)%n;
+        if(isMid[k]&&isMid[k2]){ const a=poly[k], b=poly[k2]; tri(out,a[3],b[3],b[2]); tri(out,a[3],b[2],a[2]); }
+      }
+    }
+  }
+}
+function extrudePlanar(fn,bx0,by0,bx1,by1,cell,z0,z1,out){
+  const nx=Math.ceil((bx1-bx0)/cell)+2, ny=Math.ceil((by1-by0)/cell)+2, ox=bx0-cell, oy=by0-cell, W=nx+1;
+  const F=new Float32Array(W*(ny+1)), eps=cell*0.005;
+  for(let j=0;j<=ny;j++) for(let i=0;i<=nx;i++){
+    let v=(i===0||j===0||i===nx||j===ny)?-1:fn(ox+i*cell,oy+j*cell);
+    if(Math.abs(v)<eps) v=-eps; F[j*W+i]=v;
+  }
+  extrude(F,nx,ny,(fi,fj,top)=>[ox+fi*cell,oy+fj*cell,top?z1:z0],out);
+}
+// coperchio con il contorno della forma; rh > 0 = foro centrale per il tasto
+function capShell(shape,z0,z1,N,out,rh){
+  const c0=[0,0,z0], c1=[0,0,z1], P=[], Q=[];
+  for(let j=0;j<N;j++){ const a=j/N*TWO, r=shape.r(a)-0.01; P.push([r*Math.cos(a),r*Math.sin(a)]); Q.push([rh*Math.cos(a),rh*Math.sin(a)]); }
+  for(let j=0;j<N;j++){
+    const p0=P[j], p1=P[(j+1)%N];
+    if(rh>0){
+      const q0=Q[j], q1=Q[(j+1)%N];
+      tri(out,[q0[0],q0[1],z1],[p0[0],p0[1],z1],[p1[0],p1[1],z1]); tri(out,[q0[0],q0[1],z1],[p1[0],p1[1],z1],[q1[0],q1[1],z1]);
+      tri(out,[q0[0],q0[1],z0],[p1[0],p1[1],z0],[p0[0],p0[1],z0]); tri(out,[q0[0],q0[1],z0],[q1[0],q1[1],z0],[p1[0],p1[1],z0]);
+      tri(out,[q0[0],q0[1],z0],[q0[0],q0[1],z1],[q1[0],q1[1],z1]); tri(out,[q0[0],q0[1],z0],[q1[0],q1[1],z1],[q1[0],q1[1],z0]);
+    } else {
+      tri(out,c1,[p0[0],p0[1],z1],[p1[0],p1[1],z1]);
+      tri(out,c0,[p1[0],p1[1],z0],[p0[0],p0[1],z0]);
+    }
+    tri(out,[p0[0],p0[1],z0],[p1[0],p1[1],z0],[p1[0],p1[1],z1]);
+    tri(out,[p0[0],p0[1],z0],[p1[0],p1[1],z1],[p0[0],p0[1],z1]);
+  }
+}
+function boxShell(ang,u0,u1,w,z0,z1,out){
+  const ca=Math.cos(ang), sa=Math.sin(ang), P=(u,v,z)=>[u*ca-v*sa,u*sa+v*ca,z];
+  const V=[]; for(const z of [z0,z1]) for(const [u,v] of [[u0,-w],[u1,-w],[u1,w],[u0,w]]) V.push(P(u,v,z));
+  const F=[[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
+  for(const f of F){ tri(out,V[f[0]],V[f[1]],V[f[2]]); tri(out,V[f[0]],V[f[2]],V[f[3]]); }
+}
+
+/* ---------- parete con le fessure ----------
+   Muro sul piano z=0, asse = z, LED in (0,0,L) rivolto verso il muro.
+   Il punto della parete esterna alla quota z, direzione φ, illumina il muro a distanza ρ = r(φ)·L/(L−z). */
+function buildWall(p,m,shape,out){
+  const c=p.cell, L=p.L, H=p.H, hb=p.hb;
+  const Nu=Math.max(96,Math.round(TWO*(shape.rMax+shape.rMin)/2/c));
+  const dphi=TWO/Nu;
+  let rhoMax=Math.max(shape.rMax*L/(L-hb)*1.05, m.litMax+1), clipped=false;
+  let zTop=L*(1-shape.rMin/rhoMax);
+  if(zTop>L-3){ zTop=L-3; clipped=true; }
+  const bandHi=Math.min(zTop+c*1.5, H-p.tc-0.5);
+  const V=[0,0]; for(let z=c;z<bandHi;z+=c) V.push(z); V.push(bandHi); V.push(H); V.push(H);
+  const ny=V.length-1, W=Nu+1;
+  const cosT=new Float64Array(W), sinT=new Float64Array(W), rT=new Float64Array(W), kT=new Float64Array(W);
+  for(let i=0;i<=Nu;i++){ const a=(i%Nu)*dphi; cosT[i]=Math.cos(a); sinT[i]=Math.sin(a); rT[i]=shape.r(a); kT[i]=shape.ri(a)/rT[i]; }
+  const F=new Float32Array(W*(ny+1)), eps=c*0.005, notchHalf=p.cw/2;
+  for(let j=0;j<=ny;j++){
+    const z=V[j];
+    for(let i=0;i<Nu;i++){
+      let v;
+      if(j===0||j===ny) v=-1;
+      else{
+        v=Math.max(hb-z, z-zTop);
+        if(v<=0.5*c+2){
+          const rho=rT[i]*L/(L-z);
+          const s=-sdf(m,rho*cosT[i],rho*sinT[i])*rT[i]/rho;
+          v=Math.max(v,s);
+        }
+        if(notchHalf>0){
+          let da=Math.abs(i*dphi-1.5*PI); if(da>PI) da=TWO-da;
+          v=Math.min(v,Math.max(da*rT[i]-notchHalf, z-p.cw));
+        }
+      }
+      if(Math.abs(v)<eps) v=-eps;
+      F[j*W+i]=v;
+    }
+    F[j*W+Nu]=F[j*W];
+  }
+  const bandLo=Math.max(hb-c,c);
+  const wgt=z=> z<bandLo? z/bandLo : (z<=bandHi?1:Math.max(0,(H-z)/(H-bandHi)));
+  const map=(fi,fj,top)=>{
+    const i=Math.floor(fi), si=fi-i, j=Math.floor(fj), sj=fj-j;
+    const z=si===0&&sj===0?V[j]:V[j]+(V[Math.min(j+1,ny)]-V[j])*sj;
+    let cs,sn,r,k;
+    if(si===0){ cs=cosT[i]; sn=sinT[i]; r=rT[i]; k=kT[i]; }
+    else{ const a=fi*dphi; cs=Math.cos(a); sn=Math.sin(a); r=rT[i]+(rT[i+1]-rT[i])*si; k=kT[i]+(kT[i+1]-kT[i])*si; }
+    if(top) return [r*cs,r*sn,z];
+    const rr=r*k, zi=z+(1-k)*(L-z)*wgt(z);
+    return [rr*cs,rr*sn,zi];
+  };
+  const fix=p.bn>0?bridgeWall(F,Nu,ny,V,W,dphi,rT,p):{bridged:0,removed:0};
+  extrude(F,Nu,ny,map,out);
+  const seen=new Uint8Array(W*(ny+1)), st=[]; let comps=0;
+  for(let j=1;j<ny;j++) for(let i=0;i<Nu;i++){
+    const k0=j*W+i; if(F[k0]<=0||seen[k0]) continue;
+    comps++; seen[k0]=1; st.push(k0);
+    while(st.length){
+      const q=st.pop(), jj=(q/W)|0, ii=q%W;
+      const nb=[jj*W+(ii+1)%Nu, jj*W+(ii+Nu-1)%Nu]; if(jj>1) nb.push((jj-1)*W+ii); if(jj<ny-1) nb.push((jj+1)*W+ii);
+      for(const k of nb) if(F[k]>0&&!seen[k]){ seen[k]=1; st.push(k); }
+    }
+  }
+  return {F,Nu,ny,V,W,dphi,zTop,rhoMax,clipped,comps,bridged:fix.bridged,removed:fix.removed};
+}
+/* Controllo finale sulla griglia della parete, in scala reale: ogni pezzo di parete rimasto staccato
+   (passaggi più sottili della mesh, lettere corsive che quasi si toccano…) viene collegato al resto con
+   un ponte largo p.bw lungo il percorso più corto; le briciole minuscole vengono tolte. */
+function bridgeWall(F,Nu,ny,V,W,dphi,rT,p){
+  const N=W*(ny+1), lab=new Int32Array(N).fill(-1), st=new Int32Array(N);
+  const nb=(k,out)=>{ const j=(k/W)|0, i=k%W; out.length=0;
+    out.push(j*W+(i+1)%Nu, j*W+(i+Nu-1)%Nu); if(j>1) out.push(k-W); if(j<ny-1) out.push(k+W); return out; };
+  const tmp=[], comps=[];
+  for(let j=1;j<ny;j++) for(let i=0;i<Nu;i++){
+    const k0=j*W+i; if(F[k0]<=0||lab[k0]>=0) continue;
+    const id=comps.length, cells=[]; let sp=0; lab[k0]=id; st[sp++]=k0;
+    while(sp){ const k=st[--sp]; cells.push(k); for(const q of nb(k,tmp)) if(F[q]>0&&lab[q]<0){ lab[q]=id; st[sp++]=q; } }
+    comps.push(cells);
+  }
+  if(comps.length<2) return {bridged:0,removed:0};
+  let main=0; for(let c=1;c<comps.length;c++) if(comps[c].length>comps[main].length) main=c;
+  const isMain=new Uint8Array(comps.length); isMain[main]=1;
+  let bridged=0, removed=0;
+  const order=comps.map((c,i)=>i).filter(i=>i!==main).sort((a,b)=>comps[b].length-comps[a].length);
+  const prev=new Int32Array(N);
+  for(const c of order){
+    const cells=comps[c], areaMM=cells.length*p.cell*p.cell;
+    if(areaMM<1.5){ for(const k of cells) F[k]=-p.cell*0.5; removed++; continue; }
+    // ricerca in ampiezza dai nodi dell'isola fino a un nodo collegato
+    prev.fill(-2); let sp=0, head=0, hit=-1;
+    for(const k of cells){ prev[k]=-1; st[sp++]=k; }
+    while(head<sp&&hit<0){
+      const k=st[head++];
+      for(const q of nb(k,tmp)){
+        if(prev[q]!==-2) continue; prev[q]=k;
+        if(F[q]>0&&isMain[lab[q]]){ hit=q; break; }
+        st[sp++]=q;
+      }
+    }
+    if(hit<0) continue;
+    // scava il ponte lungo il percorso, largo p.bw
+    const hz=Math.max(1,Math.round(p.bw/2/p.cell));
+    for(let k=prev[hit];k>=0&&prev[k]!==-1;k=prev[k]){
+      const j=(k/W)|0, i=k%W, hp=Math.max(1,Math.round(p.bw/2/(rT[i]*dphi)));
+      for(let dj=-hz;dj<=hz;dj++){ const jj=j+dj; if(jj<1||jj>ny-1) continue;
+        for(let di=-hp;di<=hp;di++){ const q=jj*W+((i+di)%Nu+Nu)%Nu; if(F[q]<p.cell*0.6) F[q]=p.cell*0.6; } }
+    }
+    isMain[c]=1; bridged++;
+  }
+  for(let j=0;j<=ny;j++) F[j*W+Nu]=F[j*W];
+  return {bridged,removed};
+}
+
+/* Quote del supporto LED e del tasto (asse z, muro a z=0):
+   L        lente del LED (verso il muro), trattenuta dal dente
+   L+Tl     retro del LED, appoggiato all'anello interno ("spessore interno")
+   H-tc     sotto del coperchio: tra qui e il retro del LED c'è la camera della flangia del tasto */
+function ledGeom(p){
+  const g={on:p.D>0, btn:p.btn&&p.D>0};
+  g.Rin=p.D/2+p.gl; g.Rout=g.Rin+2; g.Rlip=p.D/2-p.lip; g.zLip=p.L-1.2;
+  g.zBack=p.L+p.Tl; g.zCov=p.H-p.tc; g.cham=g.zCov-g.zBack;
+  g.rh=g.btn?p.bh/2:0;
+  g.Rs0=(g.btn?p.bf/2+p.bg:Math.max(p.D/2-4.5,2)); g.Rs1=g.Rs0+1.6;
+  g.tf=g.cham-p.bt;                              // spessore della flangia
+  return g;
+}
+const ringSlots=(x,y,r0,r1,slot)=>{               // anello r0..r1 con 4 tagli larghi "slot" (uno in basso, per il cavo)
+  const r=Math.hypot(x,y), v=Math.min(r-r0,r1-r);
+  return slot>0?Math.min(v,Math.min(Math.abs(x),Math.abs(y))-slot/2):v;
+};
+/* ---------- lettere sul frontale e ganci a scatto ----------
+   Le lettere attraversano tutto il frontale (coperchio + rilievo), così la luce interna le illumina.
+   Ogni pezzo di lettera riceve alcuni ganci: una linguetta lungo il bordo, separata dal pezzo da un
+   taglio a U (resta attaccata solo alla pelle superiore), che scende sotto il coperchio con un dente
+   smussato che si aggancia sotto il bordo del foro. */
+const CLIP={w:5, side:0.7, ft:1.0, slot:0.8, hb:1.0, gap:0.1, skin:0.8};
+function planClips(p,m,shape,g,fShape,hole){
+  const q=Math.max(p.cell,0.5), B=shape.rMax+1, n=Math.ceil(2*B/q)+1, cl=p.cl;
+  const X=i=>-B+i*q, idx=(i,j)=>j*n+i;
+  const S=new Float32Array(n*n), piece=new Uint8Array(n*n), cover=new Uint8Array(n*n);
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){
+    const x=X(i), y=X(j), s=sdf(m,x,y), f=fShape(x,y), h=hole(x,y), k=idx(i,j);
+    S[k]=s;
+    if(s-cl>0.25&&f-cl>0.25&&h-cl>0.25) piece[k]=1;
+    if(s<0&&f>0&&h>0) cover[k]=1;
+  }
+  // pezzi di lettera (componenti connesse)
+  const lab=new Int32Array(n*n).fill(-1), comps=[], st=[];
+  for(let k0=0;k0<n*n;k0++){
+    if(!piece[k0]||lab[k0]>=0) continue;
+    const id=comps.length, cells=[]; lab[k0]=id; st.push(k0);
+    while(st.length){
+      const k=st.pop(), i=k%n, j=(k/n)|0; cells.push(k);
+      for(const kk of [i>0?k-1:-1,i<n-1?k+1:-1,j>0?k-n:-1,j<n-1?k+n:-1]) if(kk>=0&&piece[kk]&&lab[kk]<0){ lab[kk]=id; st.push(kk); }
+    }
+    comps.push(cells);
+  }
+  // isole del frontale: parti di coperchio non collegate al bordo esterno
+  const seen=new Uint8Array(n*n);
+  for(let k=0;k<n*n;k++) if(cover[k]&&fShape(X(k%n),X((k/n)|0))<1.5*q){ seen[k]=1; st.push(k); }
+  while(st.length){ const k=st.pop(), i=k%n, j=(k/n)|0; for(const kk of [i>0?k-1:-1,i<n-1?k+1:-1,j>0?k-n:-1,j<n-1?k+n:-1]) if(kk>=0&&cover[kk]&&!seen[kk]){ seen[kk]=1; st.push(kk); } }
+  let islandArea=0; for(let k=0;k<n*n;k++) if(cover[k]&&!seen[k]) islandArea+=q*q;
+  // scelta dei punti di aggancio
+  const clips=[]; let unclipped=0;
+  const reach=CLIP.ft+CLIP.slot, h=0.3;
+  const blocked=r=>g.on&&r>g.Rs0-1.5&&r<g.Rout+1.5;
+  for(const cells of comps){
+    const area=cells.length*q*q; if(area<4) continue;
+    const cand=[]; let edge=0;
+    for(const k of cells){
+      const s=S[k]; if(s>cl+0.25+q*1.2) continue;
+      edge++;
+      if(!p.clips) continue;
+      const x=X(k%n), y=X((k/n)|0), r=Math.hypot(x,y);
+      if(blocked(r)||fShape(x,y)<p.t+2.5) continue;
+      let gx=sdf(m,x+h,y)-sdf(m,x-h,y), gy=sdf(m,x,y+h)-sdf(m,x,y-h); const gl=Math.hypot(gx,gy); if(gl<1e-6) continue; gx/=gl; gy/=gl;
+      const thick=sdf(m,x+gx*(cl+reach+1.4),y+gy*(cl+reach+1.4));        // materiale oltre il taglio
+      if(thick<cl+reach+0.6) continue;
+      const ox=x-gx*(s+1.2), oy=y-gy*(s+1.2);                             // sotto il dente ci deve essere coperchio
+      if(sdf(m,ox,oy)>-0.6||fShape(ox,oy)<p.t+1.5||hole(ox,oy)<1||blocked(Math.hypot(ox,oy))) continue;
+      // lungo la linguetta il bordo deve restare lì vicino (niente angoli stretti)
+      const tx=-gy, ty=gx, w2=CLIP.w/2; let ok=true;
+      for(const sg of [-1,1]){ const s2=sdf(m,x+tx*w2*sg,y+ty*w2*sg); if(Math.abs(s2-s)>0.9){ ok=false; break; } }
+      if(!ok) continue;
+      cand.push({x,y,gx,gy,score:thick});
+    }
+    const want=Math.max(2,Math.min(4,Math.round(edge*q/40)));
+    cand.sort((a,b)=>b.score-a.score);
+    const pick=[];
+    // il primo è il più robusto, poi il più lontano dai già scelti
+    if(cand.length) pick.push(cand[0]);
+    while(pick.length<want){
+      let best=null, bd=0;
+      for(const c of cand){ let d=Infinity; for(const q2 of pick) d=Math.min(d,Math.hypot(c.x-q2.x,c.y-q2.y)); if(d>bd){ bd=d; best=c; } }
+      if(!best||bd<CLIP.w+6) break; pick.push(best);
+    }
+    if(p.clips&&!pick.length) unclipped++;
+    clips.push(...pick);
+  }
+  return {clips,pieces:comps.filter(c=>c.length*q*q>=4).length,unclipped,islandArea};
+}
+function buildFront(p,m,shape,g,fShape,hole,body,ins){
+  const c=p.cell, H=p.H, B=shape.rMax+1, zc=H-p.tc, zt=H+p.tr, cl=p.cl;
+  const plan=planClips(p,m,shape,g,fShape,hole);
+  // frontale: coperchio + rilievo con le lettere passanti
+  extrudePlanar((x,y)=>Math.min(fShape(x,y),-sdf(m,x,y),hole(x,y)),-B,-B,B,B,c,zc,zt,body);
+  const base=(x,y,s)=>Math.min(fShape(x,y)-cl,s-cl,hole(x,y)-cl);
+  const C=plan.clips, w2=CLIP.w/2, ft=CLIP.ft, sl=CLIP.slot, sd=CLIP.side;
+  if(!C.length||zt-zc<CLIP.skin+0.8){ extrudePlanar((x,y)=>base(x,y,sdf(m,x,y)),-B,-B,B,B,c,zc,zt,ins); return plan; }
+  const near=(x,y,R)=>{ const out=[]; for(const k of C){ const d=Math.hypot(x-k.x,y-k.y); if(d<R) out.push(d); } return out; };
+  const slot=(x,y,s)=>{ let v=-1e9; for(const d of near(x,y,w2+sd+1)){
+      const a=Math.min(w2+sd-d, s-(cl+ft), cl+ft+sl-s);                // taglio dietro la linguetta
+      const b=Math.min(d-w2, w2+sd-d, s-cl+0.3, cl+ft+sl-s);           // tagli ai due lati
+      v=Math.max(v,a,b); } return v; };
+  const band=(x,y,s,prot)=>{ let v=-1e9; for(const d of near(x,y,w2+1)) v=Math.max(v,Math.min(w2-d, s+prot, cl+ft-s)); return v; };
+  const fine=Math.min(c,0.25);
+  // pelle superiore piena
+  extrudePlanar((x,y)=>base(x,y,sdf(m,x,y)),-B,-B,B,B,c,zt-CLIP.skin,zt,ins);
+  // corpo del pezzo con i tagli a U
+  extrudePlanar((x,y)=>{ const s=sdf(m,x,y); return Math.min(base(x,y,s),-slot(x,y,s)); },-B,-B,B,B,fine,zc,zt-CLIP.skin+0.01,ins);
+  // linguette sotto il coperchio e denti smussati (3 gradini, più sporgenti in alto)
+  const zb=zc-CLIP.gap-CLIP.hb;
+  for(const k of C){
+    const R=w2+1.5, f=(prot)=>(x,y)=>{ const s=sdf(m,x,y), d=Math.hypot(x-k.x,y-k.y); return Math.min(w2-d, s+prot, cl+ft-s, fShape(x,y)-cl, hole(x,y)-cl); };
+    extrudePlanar(f(-cl),k.x-R,k.y-R,k.x+R,k.y+R,fine,zb,zc+0.01,ins);
+    for(let i=0;i<3;i++) extrudePlanar(f(p.hk*(i+1)/3),k.x-R,k.y-R,k.x+R,k.y+R,fine,zb+i*CLIP.hb/3,zb+(i+1)*CLIP.hb/3+(i<2?0.01:0),ins);
+  }
+  return plan;
+}
+
+function buildLamp(p,m,shape){
+  const body=[], ins=[], btn=[], c=p.cell, H=p.H, B=shape.rMax+1, g=ledGeom(p);
+  const wall=buildWall(p,m,shape,body);
+  const fShape=(x,y)=>shape.r(Math.atan2(y,x))-Math.hypot(x,y);
+  const hole=g.rh>0?(x,y)=>Math.hypot(x,y)-g.rh:()=>1e9;
+  const front=buildFront(p,m,shape,g,fShape,hole,body,ins);
+  if(g.on){
+    const fc=Math.min(c,0.25), Rb=g.Rout+1, zc=g.zCov, zTop=zc+0.3;
+    const top=fn=>(x,y)=>Math.min(fn(x,y),-sdf(m,x,y));               // l'attacco al coperchio salta le lettere
+    const collar=(x,y)=>ringSlots(x,y,g.Rin,g.Rout,3), spacer=(x,y)=>ringSlots(x,y,g.Rs0,g.Rs1,0);
+    // collare a 4 linguette con dente di ritegno
+    extrudePlanar(collar,-Rb,-Rb,Rb,Rb,fc,g.zLip,zc+0.01,body);
+    extrudePlanar(top(collar),-Rb,-Rb,Rb,Rb,fc,zc,zTop,body);
+    extrudePlanar((x,y)=>ringSlots(x,y,g.Rlip,g.Rout,3),-Rb,-Rb,Rb,Rb,fc,g.zLip,p.L,body);
+    // anello interno: battuta per il retro del LED e camera per la flangia del tasto
+    if(g.cham>0.05){
+      const R=g.Rs1+1;
+      extrudePlanar(spacer,-R,-R,R,R,fc,g.zBack,zc+0.01,body);
+      extrudePlanar(top(spacer),-R,-R,R,R,fc,zc,zTop,body);
+    }
+  }
+  if(g.btn){
+    const fc=Math.min(c,0.2), rf=p.bf/2, rs=g.rh-p.bg, Rb=rf+1;
+    extrudePlanar((x,y)=>rf-Math.hypot(x,y),-Rb,-Rb,Rb,Rb,fc,g.zBack,g.zBack+g.tf,btn);
+    extrudePlanar((x,y)=>rs-Math.hypot(x,y),-Rb,-Rb,Rb,Rb,fc,g.zBack+g.tf-0.01,H+p.tr+p.bp,btn);
+  }
+  if(p.key){
+    const Ri=shape.ri(PI/2), rb=4.75, ws=2.25, ys=Ri-2.5-ws, yc=ys-6, y0=yc-rb-2.5;
+    extrudePlanar((x,y)=>{
+      let seg; if(y<yc) seg=Math.hypot(x,y-yc); else if(y>ys) seg=Math.hypot(x,y-ys); else seg=Math.abs(x);
+      const key=Math.min(Math.hypot(x,y-yc)-rb, seg-ws);
+      return Math.min(y-y0, shape.ri(Math.atan2(y,x))+0.6-Math.hypot(x,y), 9-Math.abs(x), key);
+    },-10,y0-1,10,Ri+1.5,Math.min(c,0.3),0,4.5,body);
+  }
+  return {body:new Float32Array(body), ins:new Float32Array(ins), btn:new Float32Array(btn), wall, g, front};
+}
+
+/* ---------- simulazione della luce sul muro ----------
+   Raggi da punti dell'emettitore (disco rivolto al muro) verso ogni punto del muro.
+   Un raggio passa se dove attraversa la parete esterna e quella interna c'è una fessura. */
+function wallField(w,phi,z){
+  let f=phi/w.dphi; f-=Math.floor(f/w.Nu)*w.Nu;
+  const i=Math.floor(f), si=f-i, V=w.V, ny=w.ny;
+  if(z<=V[1]||z>=V[ny-1]) return 1;
+  let lo=1, hi=ny-1; while(hi-lo>1){ const md=(lo+hi)>>1; if(V[md]<=z) lo=md; else hi=md; }
+  const sj=(z-V[lo])/(V[lo+1]-V[lo]), F=w.F, W=w.W;
+  const a=F[lo*W+i]*(1-si)+F[lo*W+i+1]*si, b=F[(lo+1)*W+i]*(1-si)+F[(lo+1)*W+i+1]*si;
+  return a*(1-sj)+b*sj;
+}
+function crossing(Sx,Sy,Dx,Dy,rf){
+  let u=0.5;
+  for(let it=0;it<3;it++){
+    const phi=Math.atan2(Sy+u*Dy,Sx+u*Dx), R=rf(phi);
+    const a=Dx*Dx+Dy*Dy, b=2*(Sx*Dx+Sy*Dy), cc=Sx*Sx+Sy*Sy-R*R, disc=b*b-4*a*cc;
+    if(disc<0) return -1;
+    u=(-b+Math.sqrt(disc))/(2*a);
+  }
+  return u;
+}
+function simulate(st,ledD){
+  const {p,m,shape,wall:w}=st, L=p.L, rOut=shape.r, rIn=shape.ri;
+  const hw=Math.max(m.extX*1.15+20, shape.rMax*2.5), hh=Math.max(m.extY*1.15+20, shape.rMax*2.5);
+  const mmpx=2*Math.max(hw,hh)/720, SW=Math.round(2*hw/mmpx), SH=Math.round(2*hh/mmpx);
+  ledD=Math.max(0,ledD||0);
+  const ns=ledD>0.05?12:1, base=[];
+  for(let i=0;i<ns;i++){ const rr=Math.sqrt((i+.5)/ns)*ledD/2, a=i*2.399963; base.push([rr*Math.cos(a),rr*Math.sin(a)]); }
+  const I=new Float32Array(SW*SH);
+  const e=ledD/2+0.5, zLo=p.hb-p.cell-2, zHi=w.zTop+p.cell+2;
+  const r0=shape.rMin*L/(L-p.hb);
+  for(let y=0;y<SH;y++){
+    const wy=-(y+.5-SH/2)*mmpx;
+    for(let x=0;x<SW;x++){
+      const wx=(x+.5-SW/2)*mmpx, r2=wx*wx+wy*wy, r=Math.sqrt(r2), R=rOut(Math.atan2(wy,wx));
+      if(r<R) continue;
+      if(r-e>0.1){                             // scarta i punti che nessun raggio può raggiungere
+        const zA=L*(1-(R+e)/(r+e)), zB=L*(1-Math.max(R-e,0.01)/(r-e));
+        if(zB<zLo||zA>zHi) continue;
+      }
+      const th=(((x*73856093)^(y*19349663))&1023)/1024*TWO, ct=Math.cos(th), sn=Math.sin(th);
+      let lit=0;
+      for(let s=0;s<ns;s++){
+        const Sx=base[s][0]*ct-base[s][1]*sn, Sy=base[s][0]*sn+base[s][1]*ct;
+        const Dx=wx-Sx, Dy=wy-Sy;
+        let u=crossing(Sx,Sy,Dx,Dy,rOut); if(u<=0||u>1) continue;
+        let phi=Math.atan2(Sy+u*Dy,Sx+u*Dx);
+        if(wallField(w,phi,L*(1-u))>0) continue;
+        u=crossing(Sx,Sy,Dx,Dy,rIn); if(u<=0||u>1) continue;
+        phi=Math.atan2(Sy+u*Dy,Sx+u*Dx);
+        const zi=L*(1-u), k=rIn(phi)/rOut(phi), zp=L+(zi-L)/k;
+        if(wallField(w,phi,zp)>0) continue;
+        lit++;
+      }
+      if(lit){ const fall=Math.sqrt((L*L+r0*r0)/(L*L+r2)); I[y*SW+x]=lit/ns*Math.min(1,fall); }
+    }
+  }
+  return {I,SW,SH,mmpx};
+}
+
+let state=null;
+function handle(msg,post){
+  const id=msg.id;
+  try{
+    if(msg.type==='build'){
+      const p=msg.p, shape=makeShape(p), g=ledGeom(p);
+      const bad=t=>post({type:'invalid',id,message:t});
+      if(g.on){
+        if(g.Rout+0.5>shape.riMin) return bad('Il supporto del LED (Ø '+(2*g.Rout).toFixed(1)+' mm) non entra nel corpo: aumenta il diametro o riduci il LED.');
+        if(g.cham<0) return bad('Il LED non entra: tra la lente ('+p.L+' mm) e il coperchio ('+g.zCov.toFixed(1).replace('.',',')+' mm) servono almeno '+p.Tl+' mm. Abbassa il LED o aumenta la profondità.');
+        if(g.Rlip<=2) return bad('Il dente di ritegno è troppo grande per questo LED.');
+        if(g.Rs1>g.Rin-0.3) return bad('La camera del tasto è più larga del LED: riduci il diametro della flangia.');
+      } else if(p.L>p.H-p.tc-2) return bad('Il LED è troppo vicino al coperchio: servono almeno 2 mm.');
+      if(g.btn){
+        if(g.tf<0.8) return bad('Camera del tasto troppo bassa ('+g.cham.toFixed(1).replace('.',',')+' mm): servono corsa + almeno 0,8 mm di flangia. Aumenta la profondità o abbassa il LED.');
+        if(p.bf<p.bh+3) return bad('La flangia deve essere almeno 3 mm più larga del foro.');
+        if(g.rh-p.bg<1) return bad('Il foro del tasto è troppo piccolo per questo gioco.');
+      }
+      const m=maskFromGray(msg.gray,msg.w,msg.h,msg.mm,p,shape);
+      if(!m) return bad('Scrivi almeno una parola.');
+      const lamp=buildLamp(p,m,shape), w=lamp.wall;
+      state={p,m,shape,wall:w};
+      const stats={sizeW:m.sizeW,sizeH:m.sizeH,extX:m.extX,extY:m.extY,rMax:shape.rMax,zTop:w.zTop,comps:w.comps,clipped:w.clipped,
+        slit10:p.L*shape.rMin*10/(m.litMax*m.litMax), nB:lamp.body.length/9, nI:lamp.ins.length/9, nT:lamp.btn.length/9,
+        cham:g.on?g.cham:null, tf:g.btn?g.tf:null,
+        bridges:m.bridges+w.bridged, filled:m.filled+w.removed, pieces:lamp.front.pieces, clips:lamp.front.clips.length, unclipped:lamp.front.unclipped, islandArea:lamp.front.islandArea};
+      post({type:'build',id,body:lamp.body,ins:lamp.ins,btn:lamp.btn,stats},[lamp.body.buffer,lamp.ins.buffer,lamp.btn.buffer]);
+    }
+    if(msg.type==='build'||msg.type==='sim'){
+      if(!state){ post({type:'nostate',id}); return; }
+      const s=simulate(state,msg.ledD);
+      post({type:'sim',id,I:s.I,SW:s.SW,SH:s.SH,mmpx:s.mmpx},[s.I.buffer]);
+    }
+  }catch(err){ post({type:'error',id,message:String(err&&err.message||err)}); }
+}
+return handle;
+}
+
+/* =====================================================================
+   PAGINA
+   ===================================================================== */
+(function(){
+const $=id=>document.getElementById(id);
+const PI=Math.PI;
+const fmt=(v,d)=>v.toFixed(d).replace('.',',');
+const kfmt=n=>n>=1e6?fmt(n/1e6,2)+' M':n>=1e3?Math.round(n/1e3)+' k':String(n);
+
+/* ---------- controlli: cursore + numero ---------- */
+const NUM=['W','ls','lh','bold','tx','ty','trot','S','H','rc','rot','t','hb','tc','tr','L','led','D','Tl','gld','lip','bh','bf','bt','bp','bg','cw','cl','hk','bw'];
+
+/* ---------- font ---------- */
+const range=(a,b)=>{ const r=[]; for(let w=a;w<=b;w+=100) r.push(w); return r; };
+const FONTS=[
+  {g:'Stencil',n:'Stardos Stencil',w:[400,700],d:700},
+  {g:'Stencil',n:'Saira Stencil One',w:[400]},
+  {g:'Stencil',n:'Saira Stencil',w:range(100,900),d:600},
+  {g:'Stencil',n:'Big Shoulders Stencil',w:range(100,900),d:800},
+  {g:'Stencil',n:'Stick No Bills',w:range(200,800),d:700},
+  {g:'Stencil',n:'Allerta Stencil',w:[400]},
+  {g:'Stencil',n:'Black Ops One',w:[400]},
+  {g:'Stencil',n:'Sirin Stencil',w:[400]},
+  {g:'Stencil',n:'Emblema One',w:[400]},
+  {g:'Stencil',n:'Wallpoet',w:[400]},
+  {g:'Non stencil',n:'Anton',w:[400]},
+  {g:'Non stencil',n:'Bebas Neue',w:[400]},
+  {g:'Non stencil',n:'Bungee',w:[400]},
+  {g:'Non stencil',n:'Montserrat',w:range(100,900),d:800},
+  {g:'Non stencil',n:'Permanent Marker',w:[400]},
+  {g:'Corsivi e pop',n:'Shrikhand',w:[400]},
+  {g:'Corsivi e pop',n:'Leckerli One',w:[400]},
+  {g:'Corsivi e pop',n:'Lobster',w:[400]},
+  {g:'Corsivi e pop',n:'Lobster Two',w:[400,700],d:700},
+  {g:'Corsivi e pop',n:'Pacifico',w:[400]},
+  {g:'Corsivi e pop',n:'Oleo Script',w:[400,700],d:700},
+  {g:'Corsivi e pop',n:'Chicle',w:[400]},
+  {g:'Corsivi e pop',n:'Lily Script One',w:[400]},
+  {g:'Corsivi e pop',n:'Grand Hotel',w:[400]},
+  {g:'Corsivi e pop',n:'Kaushan Script',w:[400]},
+  {g:'Corsivi e pop',n:'Yellowtail',w:[400]},
+  {g:'Corsivi e pop',n:'Berkshire Swash',w:[400]},
+  {g:'Corsivi e pop',n:'Bagel Fat One',w:[400]},
+  {g:'Corsivi e pop',n:'Titan One',w:[400]},
+  {g:'Corsivi e pop',n:'Sonsie One',w:[400]}
+];
+function fillFonts(sel){
+  const box=$('font'); box.innerHTML='';
+  const groups={};
+  FONTS.forEach((f,i)=>{
+    let og=groups[f.g]; if(!og){ og=groups[f.g]=document.createElement('optgroup'); og.label=f.g; box.appendChild(og); }
+    const o=document.createElement('option'); o.value=String(i); o.textContent=f.n; o.style.fontFamily='"'+f.n+'"'; og.appendChild(o);
+  });
+  box.value=String(sel||0); fillWeights();
+}
+function fillWeights(){
+  const f=FONTS[+$('font').value], fw=$('fw'), names={100:'Thin',200:'Extra light',300:'Light',400:'Regular',500:'Medium',600:'Semibold',700:'Bold',800:'Extra bold',900:'Black'};
+  fw.innerHTML=f.w.map(w=>'<option value="'+w+'">'+w+' · '+names[w]+'</option>').join('');
+  fw.value=String(f.d||f.w[0]); fw.disabled=f.w.length<2;
+  fontNote();
+}
+function fontNote(){
+  const f=FONTS[+$('font').value], n=$('fontNote'), bn=+$('bn').value;
+  if(f.g==='Stencil'){ n.textContent=''; n.className='note full'; return; }
+  if(bn>0){ n.textContent='Font non stencil: l\'interno delle lettere chiuse (O, A, B, D, R, gli occhielli dei corsivi) viene collegato con ponti automatici, che sul muro si vedono come sottili tagli nelle lettere.'; n.className='note full'; }
+  else { n.textContent='Ponti disattivati: l\'interno delle lettere chiuse diventa un pezzo staccato sulla parete e sul frontale.'; n.className='note full warn'; }
+}
+/* font caricati: salvati nel browser (IndexedDB), così restano dopo la chiusura */
+const fontDB={
+  open(){ return new Promise((ok,ko)=>{ const r=indexedDB.open('lampada-font',1); r.onupgradeneeded=()=>r.result.createObjectStore('f',{keyPath:'name'}); r.onsuccess=()=>ok(r.result); r.onerror=()=>ko(r.error); }); },
+  async all(){ const db=await this.open(); return new Promise((ok,ko)=>{ const q=db.transaction('f').objectStore('f').getAll(); q.onsuccess=()=>ok(q.result); q.onerror=()=>ko(q.error); }); },
+  async put(rec){ const db=await this.open(); return new Promise((ok,ko)=>{ const t=db.transaction('f','readwrite'); t.objectStore('f').put(rec); t.oncomplete=ok; t.onerror=()=>ko(t.error); }); }
+};
+async function addFont(name,data){
+  const face=new FontFace(name,data); await face.load(); document.fonts.add(face);
+  if(!FONTS.some(f=>f.n===name)) FONTS.push({g:'Personale',n:name,w:[400]});
+}
+fillFonts(0);
+$('font').addEventListener('change',fillWeights);
+$('bn').addEventListener('change',fontNote);
+$('fontUp').onclick=()=>$('fontFile').click();
+$('fontFile').addEventListener('change',async()=>{
+  const file=$('fontFile').files[0]; if(!file) return;
+  try{
+    const name=file.name.replace(/\.[^.]+$/,'').replace(/["\\]/g,'');
+    const data=await file.arrayBuffer();
+    await addFont(name,data);
+    try{ await fontDB.put({name,data}); }catch(e){}
+    fillFonts(FONTS.findIndex(f=>f.n===name)); schedule();
+  }catch(e){ setStatus('Impossibile leggere il font: '+e.message,'warn'); }
+  $('fontFile').value='';
+});
+(async()=>{ try{
+  const recs=await fontDB.all(); if(!recs.length) return;
+  const sel=FONTS[+$('font').value].n;
+  for(const r of recs){ try{ await addFont(r.name,r.data); }catch(e){} }
+  fillFonts(FONTS.findIndex(f=>f.n===sel));
+}catch(e){} })();
+NUM.forEach(id=>{
+  const n=$(id), row=document.createElement('div'), rg=document.createElement('input');
+  row.className='row'; rg.type='range'; rg.min=n.min; rg.max=n.max; rg.step=n.step; rg.value=n.value;
+  const lb=document.querySelector('label[for="'+id+'"]'); if(lb) rg.setAttribute('aria-label',lb.textContent);
+  n.inputMode='decimal';
+  n.parentNode.insertBefore(row,n); row.appendChild(rg); row.appendChild(n);
+  rg.addEventListener('input',()=>{ n.value=rg.value; n.dispatchEvent(new Event('input')); });
+  n.addEventListener('input',()=>{ if(n.value!=='') rg.value=n.value; });
+});
+function seg(id,cb){
+  const box=$(id); box.value=box.querySelector('.on').dataset.v;
+  box.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    box.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+    box.value=b.dataset.v; cb();
+  });
+}
+
+function params(){
+  return {
+    text:$('text').value, fontName:FONTS[+$('font').value].n, fontW:$('fw').value, W:+$('W').value,
+    ls:+$('ls').value, lh:+$('lh').value, align:$('align').value, bn:+$('bn').value, bw:+$('bw').value,
+    bold:+$('bold').value, tx:+$('tx').value, ty:+$('ty').value, trot:+$('trot').value*PI/180,
+    n:+$('shape').value, S:+$('S').value, rc:+$('rc').value, rot:+$('rot').value*PI/180,
+    H:+$('H').value, t:+$('t').value, hb:+$('hb').value, tc:+$('tc').value, tr:+$('tr').value,
+    L:+$('L').value, D:+$('D').value, Tl:+$('Tl').value, gl:+$('gld').value, lip:+$('lip').value,
+    btn:$('btn').value==='1', bh:+$('bh').value, bf:+$('bf').value, bt:+$('bt').value, bp:+$('bp').value, bg:+$('bg').value,
+    key:$('key').value==='1', cw:+$('cw').value, cl:+$('cl').value, clips:$('clips').value==='1', hk:+$('hk').value,
+    cell:+$('res').value
+  };
+}
+function setStatus(msg,cls){ const s=$('status'); s.textContent=msg; s.className='status '+(cls||''); }
+function setChip(txt,cls){ const c=$('chip'); c.textContent=txt; c.className='chip '+(cls||''); }
+function setBusy(on,txt){ $('busy').classList.toggle('show',on); if(txt) $('busyTxt').textContent=txt; }
+
+/* ---------- testo: disegnato qui (servono i font della pagina), il resto nel worker ---------- */
+let textCache={key:'',val:null};
+async function renderText(p){
+  const key=[p.text,p.fontName,p.fontW,p.W,p.ls,p.lh,p.align].join('|');
+  if(textCache.key===key) return textCache.val;
+  const lines=p.text.split('\n').map(s=>s.replace(/\s+$/,'')).filter(s=>s.trim());
+  let val=null;
+  if(lines.length){
+    const fam='"'+p.fontName+'", sans-serif';
+    try{ await document.fonts.load(p.fontW+' 200px "'+p.fontName+'"', p.text); }catch(e){}
+    const c=document.createElement('canvas');
+    let ctx=c.getContext('2d');
+    ctx.font=p.fontW+' 200px '+fam;
+    if('letterSpacing' in ctx) ctx.letterSpacing=(p.ls/100*200)+'px';
+    // larghezza reale dell'inchiostro di ogni riga (senza la spaziatura dopo l'ultima lettera)
+    const widths=lines.map(l=>{ const mt=ctx.measureText(l); return (mt.actualBoundingBoxRight+mt.actualBoundingBoxLeft)||mt.width; });
+    const maxw=Math.max(1,...widths);
+    const mt0=ctx.measureText('ÀgjpqyÉ');
+    const asc=mt0.actualBoundingBoxAscent||150, desc=mt0.actualBoundingBoxDescent||50;
+    const targetPx=Math.min(2400,Math.max(1200,Math.round(p.W/0.13)));
+    const k=targetPx/maxw, fs=200*k, lh=(asc+desc)*k*p.lh/100, pad=24+Math.abs(p.ls)/100*fs;
+    c.width=Math.round(targetPx+pad*2); c.height=Math.round(Math.max(lh*(lines.length-1),0)+(asc+desc)*k+pad*2);
+    ctx=c.getContext('2d',{willReadFrequently:true});
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#fff'; ctx.font=p.fontW+' '+fs+'px '+fam;
+    if('letterSpacing' in ctx) ctx.letterSpacing=(p.ls/100*fs)+'px';
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    lines.forEach((l,i)=>{
+      const mt=ctx.measureText(l), lw=widths[i]*k, left=mt.actualBoundingBoxLeft||0;
+      const x0=p.align==='left'?pad:p.align==='right'?c.width-pad-lw:(c.width-lw)/2;
+      ctx.fillText(l,x0+left,pad+lh*i+asc*k);
+    });
+    const w=c.width, h=c.height, data=ctx.getImageData(0,0,w,h).data, gray=new Uint8Array(w*h);
+    for(let i=0;i<w*h;i++) gray[i]=data[i*4];
+    val={gray,w,h,mm:p.W/targetPx};
+  }
+  textCache={key,val};
+  return val;
+}
+
+/* ---------- worker ---------- */
+let worker=null, local=null, stateReady=false, reqId=0, running=false;
+function startWorker(){
+  try{
+    const src='const handle=('+CORE.toString()+')();self.onmessage=e=>handle(e.data,(o,t)=>self.postMessage(o,t||[]));';
+    const url=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
+    worker=new Worker(url);
+    worker.onmessage=e=>onResult(e.data);
+    worker.onerror=e=>{ e.preventDefault&&e.preventDefault(); console.error(e); worker=null; local=local||CORE(); stateReady=false; running=false; generate(); };
+  }catch(e){ worker=null; local=CORE(); }
+  stateReady=false;
+}
+function send(msg,transfer){
+  if(worker){
+    if(running){ worker.terminate(); startWorker(); }   // annulla il calcolo in corso
+    running=true;
+    worker.postMessage(msg,transfer||[]);
+  } else {
+    running=true;
+    setTimeout(()=>local(msg,o=>onResult(o)),30);
+  }
+}
+
+/* ---------- pipeline ---------- */
+let current=null, lastP=null, timer=null;
+async function generate(){
+  const my=++reqId, p=params();
+  if([p.S,p.H,p.t,p.hb,p.tc,p.tr,p.L,p.W,p.cell].some(v=>!(v>0))||p.rc<0) return invalid('Controlla i valori: devono essere numeri positivi.');
+  if(p.t>p.S/8) return invalid('La parete è troppo spessa rispetto alla dimensione del corpo.');
+  if(p.L<p.hb+5) return invalid('Il LED deve stare almeno 5 mm sopra la fascia piena lato muro.');
+  setBusy(true,'Genero la lampada…'); setChip('Calcolo…'); setStatus('Genero la lampada…');
+  const txt=await renderText(p);
+  if(my!==reqId) return;
+  if(!txt) return invalid('Scrivi almeno una parola.');
+  lastP=p;
+  const gray=txt.gray.slice();
+  send({type:'build',id:my,p,gray,w:txt.w,h:txt.h,mm:txt.mm,ledD:+$('led').value},[gray.buffer]);
+}
+function invalid(msg){
+  running=false; setBusy(false); setChip('Da rivedere','warn'); setStatus(msg,'warn');
+  $('dlBody').disabled=true; $('dlIns').disabled=true; $('dlBtn').disabled=true;
+}
+function resim(){
+  if(!stateReady||!current){ schedule(); return; }
+  const my=++reqId; setBusy(true,'Simulo la luce…');
+  send({type:'sim',id:my,ledD:+$('led').value});
+}
+function onResult(d){
+  if(d.id!==reqId) return;
+  if(d.type==='invalid'){ invalid(d.message); return; }
+  if(d.type==='error'){ invalid('Errore nel calcolo: '+d.message); return; }
+  if(d.type==='nostate'){ running=false; stateReady=false; generate(); return; }
+  if(d.type==='build'){
+    stateReady=true;
+    current={p:lastP,body:d.body,ins:d.ins,btn:d.btn,stats:d.stats};
+    showMesh();
+    updateStats();
+    setBusy(true,'Simulo la luce…');
+    return;
+  }
+  if(d.type==='sim'){
+    running=false;
+    sim={I:d.I,SW:d.SW,SH:d.SH,mmpx:d.mmpx};
+    buildWall(); setBusy(false);
+  }
+}
+function schedule(){ clearTimeout(timer); setBusy(true,'Aggiorno…'); timer=setTimeout(generate,350); }
+
+function updateStats(){
+  const {p,stats:s}=current;
+  $('stText').textContent=Math.round(s.sizeW)+' × '+Math.round(s.sizeH);
+  $('stLed').textContent=s.cham===null?'–':fmt(s.cham,1)+' mm';
+  $('btnNote').textContent=s.tf!==null
+    ? 'Flangia spessa '+fmt(s.tf,1)+' mm in una camera alta '+fmt(s.cham,1)+' mm (corsa '+fmt(p.bt,1)+' mm). Lo stelo passa nel foro del frontale e sporge di '+fmt(p.bp,1)+' mm; la flangia resta tra coperchio e retro del LED, così premendo spinge il LED e lo accende.'
+    : 'Senza tasto: il LED si appoggia all\'anello interno sotto il coperchio.';
+  $('stDet').textContent=fmt(s.slit10,2)+' mm';
+  $('stZ').textContent=fmt(s.zTop,1)+' mm';
+  $('stParts').textContent=String(s.comps);
+  $('stTris').textContent=kfmt(s.nB+s.nI+s.nT);
+  const warns=[];
+  if(s.comps>1) warns.push('La parete ha '+s.comps+' parti separate: usa un font stencil o evita le lettere con isole interne.');
+  if(s.clipped) warns.push('Il testo è troppo grande per questa altezza del LED: le parti più lontane non vengono proiettate. Alza il LED o riduci la larghezza.');
+  if(s.slit10<0.4) warns.push('Ai bordi del testo i dettagli sulla parete sono molto piccoli: riduci la larghezza o alza il LED.');
+  $('bridgeNote').textContent=(s.bridges?s.bridges+(s.bridges===1?' ponte aggiunto':' ponti aggiunti'):'')+(s.filled?(s.bridges?', ':'')+s.filled+(s.filled===1?' isola minuscola riempita':' isole minuscole riempite'):'')+(s.bridges||s.filled?'.':'');
+  if(s.unclipped>0) warns.push(s.unclipped===1?'Un pezzo di lettera sul frontale è troppo sottile per un gancio: andrà incollato (o ingrossa il testo).':s.unclipped+' pezzi di lettera sul frontale sono troppo sottili per un gancio: andranno incollati (o ingrossa il testo).');
+  if(s.islandArea>4) warns.push('Il frontale ha parti staccate dal bordo (circa '+Math.round(s.islandArea)+' mm²), per esempio l\'interno di una O: usa un font stencil.');
+  if(p.clips&&s.clips&&p.cl<0.1) warns.push('Con i ganci serve un gioco inserti di almeno 0,1 mm, altrimenti i pezzi non entrano.');
+  $('clipNote').textContent=s.pieces
+    ? s.pieces+(s.pieces===1?' pezzo':' pezzi')+' di lettera sul frontale'+(p.clips?', '+s.clips+(s.clips===1?' gancio':' ganci')+' a scatto in tutto.':' (senza ganci: da incollare o stampare in multicolore).')
+    : 'Nessuna lettera cade sul frontale.';
+  $('warnList').innerHTML=warns.map(t=>'<li>'+t+'</li>').join('');
+  setChip(warns.length?'Da rivedere':'Pronta',warns.length?'warn':'ok');
+  setStatus(warns.length?'Controlla gli avvisi prima di stampare.':'Pronta da stampare.',warns.length?'':'ok');
+  $('dlBody').disabled=false; $('dlIns').disabled=s.nI===0; $('dlBtn').disabled=s.nT===0;
+}
+
+/* ---------- scena 3D ----------
+   Muro sul piano z=0 (verticale), lampada lungo +z verso chi guarda, y in alto. */
+const viewer=$('viewer'), canvas=$('gl');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(36,1,1,20000); cam.up.set(0,1,0); scene.add(cam);
+const hemi=new THREE.HemisphereLight(0xffffff,0x4a5260,0.7); scene.add(hemi);
+const dirL=new THREE.DirectionalLight(0xffffff,0.8); dirL.position.set(0.4,0.6,1); cam.add(dirL);
+const matB=new THREE.MeshStandardMaterial({roughness:.6,metalness:.05,side:THREE.DoubleSide});
+const matI=new THREE.MeshStandardMaterial({roughness:.5,metalness:0,side:THREE.DoubleSide});
+const matT=new THREE.MeshStandardMaterial({roughness:.5,metalness:0,side:THREE.DoubleSide});
+// interno del corpo: debole bagliore del LED visto dalle fessure
+const ledGlow=new THREE.PointLight(0xffc77a,0,200,2); scene.add(ledGlow);
+
+const AMB={dark:{wall:[0.07,0.08,0.09],hemi:0.22,dir:0.25},dim:{wall:[0.40,0.42,0.45],hemi:0.45,dir:0.5},day:{wall:[0.80,0.81,0.83],hemi:0.8,dir:0.9}};
+const COL={warm:[1,0.78,0.47],neutral:[1,0.94,0.86],cold:[0.78,0.87,1]};
+let amb='dim', lightOn=true, sim=null;
+const layers={body:true,ins:true,btn:true,wall:true}; let exploded=false;
+
+const backdrop=new THREE.Mesh(new THREE.PlaneGeometry(20000,20000),new THREE.MeshBasicMaterial({color:0x666666}));
+backdrop.position.z=-0.6; scene.add(backdrop);
+const wallCanvas=document.createElement('canvas'); wallCanvas.width=wallCanvas.height=2;
+const wallTex=new THREE.CanvasTexture(wallCanvas); wallTex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+const wallMesh=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:wallTex}));
+wallMesh.position.z=-0.3; wallMesh.visible=false; scene.add(wallMesh);
+
+let dirty=true;
+function buildWall(){
+  if(!sim) return;
+  const {I,SW,SH,mmpx}=sim;
+  if(wallCanvas.width!==SW||wallCanvas.height!==SH){ wallCanvas.width=SW; wallCanvas.height=SH; }
+  const ctx=wallCanvas.getContext('2d'), img=ctx.createImageData(SW,SH), d=img.data;
+  const B=AMB[amb].wall, Lc=COL[$('col').value], on=lightOn?1:0;
+  for(let i=0;i<SW*SH;i++){
+    const v=I[i]*on;
+    for(let k=0;k<3;k++) d[i*4+k]=255*(1-(1-B[k])*(1-Lc[k]*v));
+    d[i*4+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  wallTex.needsUpdate=true;
+  wallMesh.scale.set(SW*mmpx,SH*mmpx,1);
+  wallMesh.visible=layers.wall;
+  dirty=true;
+}
+function applyAmbient(){
+  const a=AMB[amb], B=a.wall;
+  backdrop.material.color.setRGB(B[0],B[1],B[2]);
+  backdrop.visible=layers.wall;
+  wallMesh.visible=layers.wall&&!!sim;
+  hemi.intensity=a.hemi; dirL.intensity=a.dir;
+  const c=COL[$('col').value]; ledGlow.color.setRGB(c[0],c[1],c[2]);
+  ledGlow.intensity=lightOn?(amb==='dark'?1.2:amb==='dim'?0.6:0.2):0;
+  applyGlow();
+  const bg=layers.wall?B:[B[0]*0.8,B[1]*0.8,B[2]*0.8];
+  viewer.style.background='rgb('+bg.map(v=>Math.round(v*255)).join(',')+')';
+  viewer.classList.toggle('light',amb==='day');
+  buildWall(); dirty=true;
+}
+// le lettere del frontale sono illuminate da dentro: bagliore del colore del LED
+function applyGlow(){
+  const c=COL[$('col').value], k=lightOn?(amb==='dark'?0.75:amb==='dim'?0.4:0.12):0;
+  matI.emissive.setRGB(c[0]*k,c[1]*k,c[2]*k); dirty=true;
+}
+function applyLayers(){
+  const lift=current?Math.max(15,current.p.tc+current.p.tr+8):15;
+  if(meshB) meshB.visible=layers.body;
+  if(meshI){ meshI.visible=layers.ins; meshI.position.z=exploded?lift:0; }
+  if(meshT){ meshT.visible=layers.btn; meshT.position.z=exploded?lift*2.2:0; }
+  dirty=true;
+}
+function applyColors(){ matB.color.set($('cb').value); matI.color.set($('ci').value); matT.color.set($('ci').value); applyGlow(); }
+
+let meshB=null, meshI=null, meshT=null, tz=30, yaw=0.6, pitch=0.3, dist=500, fitted=false;
+function placeCam(){
+  const cp=Math.cos(pitch);
+  cam.position.set(dist*cp*Math.sin(yaw), dist*Math.sin(pitch), tz+dist*cp*Math.cos(yaw));
+  cam.lookAt(0,0,tz); dirty=true;
+}
+function fit(){
+  if(!current) return;
+  const s=current.stats, tf=Math.tan(cam.fov/2*PI/180);
+  const spanW=Math.max(s.extX*2.2, s.rMax*4), spanH=Math.max(s.extY*2.6, s.rMax*4);
+  dist=Math.max(spanH/2/tf, spanW/2/(tf*cam.aspect));
+  placeCam();
+}
+function resize(){
+  const r=viewer.getBoundingClientRect();
+  renderer.setSize(r.width,r.height,false); cam.aspect=r.width/Math.max(r.height,1);
+  cam.updateProjectionMatrix(); dirty=true;
+}
+new ResizeObserver(resize).observe(viewer);
+(function loop(){ if(dirty){ renderer.render(scene,cam); dirty=false; } requestAnimationFrame(loop); })();
+
+const pts=new Map(); let pinch=0;
+canvas.addEventListener('pointerdown',e=>{ canvas.setPointerCapture(e.pointerId); pts.set(e.pointerId,[e.clientX,e.clientY]); pinch=0; clearView(); });
+canvas.addEventListener('pointerup',e=>pts.delete(e.pointerId));
+canvas.addEventListener('pointercancel',e=>pts.delete(e.pointerId));
+canvas.addEventListener('pointermove',e=>{
+  if(!pts.has(e.pointerId)) return;
+  const prev=pts.get(e.pointerId);
+  if(pts.size===1){
+    yaw-=(e.clientX-prev[0])*0.007;
+    pitch=Math.max(-1.5,Math.min(1.5,pitch+(e.clientY-prev[1])*0.007));
+    pts.set(e.pointerId,[e.clientX,e.clientY]); placeCam();
+  } else if(pts.size===2){
+    pts.set(e.pointerId,[e.clientX,e.clientY]);
+    const [a,b]=[...pts.values()], dd=Math.hypot(a[0]-b[0],a[1]-b[1]);
+    if(pinch){ dist=Math.max(40,Math.min(8000,dist*pinch/dd)); placeCam(); }
+    pinch=dd;
+  }
+});
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); dist=Math.max(40,Math.min(8000,dist*(1+Math.sign(e.deltaY)*0.1))); placeCam(); },{passive:false});
+const VIEWS={v34:[0.6,0.3],vFront:[0,0],vSide:[1.35,0.12],vBack:[PI-0.5,0.35]};
+function clearView(){ Object.keys(VIEWS).forEach(k=>$(k).classList.remove('on')); }
+Object.keys(VIEWS).forEach(k=>$(k).onclick=()=>{ [yaw,pitch]=VIEWS[k]; clearView(); $(k).classList.add('on'); placeCam(); });
+$('vFit').onclick=fit;
+renderer.localClippingEnabled=true;
+const cutPlane=new THREE.Plane(new THREE.Vector3(-1,0,0),0);
+let cutOn=false;
+$('vCut').onclick=()=>{
+  cutOn=!cutOn; $('vCut').classList.toggle('on',cutOn); $('vCut').setAttribute('aria-pressed',cutOn);
+  for(const m of [matB,matI,matT]){ m.clippingPlanes=cutOn?[cutPlane]:[]; m.needsUpdate=true; }
+  if(cutOn){ yaw=1.25; pitch=0.15; clearView(); if(current) dist=Math.max(current.stats.rMax*5,current.p.H*3.2); placeCam(); }
+  dirty=true;
+};
+
+function geom(t){ const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(t,3)); g.computeVertexNormals(); return g; }
+function showMesh(){
+  for(const mm of [meshB,meshI,meshT]) if(mm){ scene.remove(mm); mm.geometry.dispose(); }
+  meshB=new THREE.Mesh(geom(current.body),matB); scene.add(meshB);
+  meshI=new THREE.Mesh(geom(current.ins),matI); scene.add(meshI);
+  meshT=new THREE.Mesh(geom(current.btn),matT); scene.add(meshT);
+  applyLayers();
+  ledGlow.position.set(0,0,current.p.L-1);
+  tz=current.p.H/2;
+  if(!fitted){ fitted=true; fit(); } else placeCam();   // la vista resta dove l'hai lasciata
+}
+
+/* ---------- comandi ---------- */
+const IDS=['text','font','fw','W','ls','lh','bold','tx','ty','trot','shape','S','rc','rot','H','t','hb','tc','tr',
+  'L','D','Tl','gld','lip','btn','bh','bf','bt','bp','bg','key','cw','cl','clips','hk','res','bn','bw'];
+IDS.forEach(id=>$(id).addEventListener($(id).tagName==='SELECT'?'change':'input',schedule));
+seg('align',schedule);
+let ledTimer=null;
+$('led').addEventListener('input',()=>{ clearTimeout(ledTimer); setBusy(true,'Simulo la luce…'); ledTimer=setTimeout(resim,300); });
+seg('col',applyAmbient);
+seg('cb',applyColors);
+seg('ci',applyColors);
+$('lightOn').onclick=()=>{ lightOn=!lightOn; $('lightOn').classList.toggle('on',lightOn); $('lightOn').setAttribute('aria-pressed',lightOn); $('lightOn').textContent=lightOn?'💡 Luce accesa':'Luce spenta'; applyAmbient(); };
+document.querySelectorAll('[data-layer]').forEach(b=>b.onclick=()=>{
+  const k=b.dataset.layer; layers[k]=!layers[k]; b.classList.toggle('on',layers[k]); b.setAttribute('aria-pressed',layers[k]);
+  if(k==='wall') applyAmbient(); else applyLayers();
+});
+$('explode').onclick=()=>{ exploded=!exploded; $('explode').classList.toggle('on',exploded); $('explode').setAttribute('aria-pressed',exploded); applyLayers(); };
+document.querySelectorAll('[data-amb]').forEach(b=>b.onclick=()=>{
+  amb=b.dataset.amb; document.querySelectorAll('[data-amb]').forEach(x=>x.classList.toggle('on',x===b)); applyAmbient();
+});
+
+/* ---------- STL ---------- */
+function makeSTL(T,flip,zShift){
+  const n=T.length/9, buf=new ArrayBuffer(84+50*n), dv=new DataView(buf);
+  const hdr='Lampada proiettore - generatore STL';
+  for(let i=0;i<hdr.length;i++) dv.setUint8(i,hdr.charCodeAt(i));
+  dv.setUint32(80,n,true);
+  let o=84; const v=new Float32Array(9);
+  for(let t=0;t<n;t++){
+    const b=t*9;
+    for(let k=0;k<9;k+=3){
+      if(flip){ v[k]=T[b+k]; v[k+1]=-T[b+k+1]; v[k+2]=-T[b+k+2]+zShift; }
+      else { v[k]=T[b+k]; v[k+1]=T[b+k+1]; v[k+2]=T[b+k+2]; }
+    }
+    const ux=v[3]-v[0],uy=v[4]-v[1],uz=v[5]-v[2],wx=v[6]-v[0],wy=v[7]-v[1],wz=v[8]-v[2];
+    let nx=uy*wz-uz*wy, ny=uz*wx-ux*wz, nz=ux*wy-uy*wx; const l=Math.hypot(nx,ny,nz)||1;
+    dv.setFloat32(o,nx/l,true); dv.setFloat32(o+4,ny/l,true); dv.setFloat32(o+8,nz/l,true); o+=12;
+    for(let q=0;q<9;q++){ dv.setFloat32(o,v[q],true); o+=4; }
+    dv.setUint16(o,0,true); o+=2;
+  }
+  return buf;
+}
+function download(buf,name){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([buf],{type:'model/stl'}));
+  a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function exportPart(which){
+  if(!current) return;
+  const flip=$('orient').value==='front', zShift=current.p.H+current.p.tr;
+  const T=current[which];
+  const name=(current.p.text.replace(/\s+/g,'-').replace(/[^\w\-]/g,'').toLowerCase()||'lampada').slice(0,30);
+  download(makeSTL(T,flip,zShift),'lampada-'+name+'-'+{body:'corpo',ins:'inserti',btn:'tasto'}[which]+'.stl');
+}
+$('dlBody').onclick=()=>exportPart('body');
+$('dlIns').onclick=()=>exportPart('ins');
+$('dlBtn').onclick=()=>exportPart('btn');
+
+startWorker();
+applyColors(); applyAmbient(); resize(); placeCam();
+(document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(generate);
+})();
+</script>
+</body>
+</html>
